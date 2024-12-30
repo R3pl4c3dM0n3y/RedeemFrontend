@@ -1,0 +1,93 @@
+/* Base styles for the header */
+header {
+    box-sizing: border-box;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    width: 100%;
+    z-index: 2;
+    animation: header-appears 0.4s ease-in-out;
+  }
+  
+  /* Header content container */
+  .header-content {
+    box-sizing: border-box;
+    height: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 1250px;
+    margin: 0 auto;
+    padding: 0 20px;
+  }
+  
+  /* Links container */
+  .links {
+    display: flex;
+    gap: 20px;
+  }
+  
+  /* Header actions container */
+  .header-actions {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+  
+  /* Text in header actions */
+  .header-actions > span {
+    font-size: 14px;
+    opacity: 0.8;
+  }
+  
+  /* Animation for header appearance */
+  @keyframes header-appears {
+    0% {
+      opacity: 0;
+      transform: translateY(-100px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* Responsive styles */
+  @media (max-width: 768px) {
+    header {
+      height: 60px;
+    }
+  
+    .header-content {
+      flex-direction: row;
+      justify-content: center;
+      padding: 10px;
+    }
+  
+    .links,
+    .header-actions {
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+    }
+    .links {
+        justify-content: flex-start;
+    }
+    .header-actions {
+        justify-content: flex-end;
+    }
+  
+    .header-actions > span {
+      display: none;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .links,
+    .header-actions {
+      width: 100%;
+    }
+  }

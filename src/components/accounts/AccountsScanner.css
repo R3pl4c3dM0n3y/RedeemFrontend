@@ -1,0 +1,320 @@
+.account-scanner {
+	margin-top: 20px;
+	position: relative;
+	min-height: 400px;
+	padding: 40px;
+	border-radius: 24px;
+	background-color: var(--bg-color);
+	box-shadow: 0 0 40px -20px var(--shadow-color);
+}
+
+.account-scanner>img {
+	position: absolute;
+	inset: -60px auto auto -60px;
+	width: 120px;
+}
+
+.account-scanner h2 {
+	position: absolute;
+	inset: 40px 20% auto 20%;
+	margin: 0;
+	width: 60%;
+	text-align: center;
+	font-size: 18px;
+}
+
+
+.wallet-wrapper {
+	position: absolute;
+	inset: 40px 40px auto auto;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	gap: 20px;
+	animation: fadeInUp 0.5s ease forwards;
+}
+
+
+.wallet-wrapper p {
+	margin: 0;
+}
+
+.accounts-list {
+	margin-top: 40px;
+}
+
+
+
+.loading p::after {
+	animation: text-animation .4s ease-in;
+}
+
+@keyframes text-animation {
+	0% {
+		content: ".";
+	}
+
+	33% {
+		content: "..";
+	}
+
+	66% {
+		content: "...";
+	}
+}
+
+
+.claim-all-wrapper {
+	display: grid;
+	place-items: center;
+	margin-top: 40px;
+	animation: fadeInUp 0.5s ease forwards;
+}
+
+
+
+.mode-switch-wrapper {
+	display: flex;
+	align-items: center;
+	cursor: pointer !important;
+}
+
+.mode-switch-wrapper * {
+	cursor: pointer !important;
+}
+
+.mode-switch {
+	display: inline-block;
+	height: fit-content;
+	width: fit-content;
+	border-radius: 24px;
+	transition: 0.2s ease-in-out;
+}
+
+.mode-switch input {
+	display: none;
+}
+
+.account-scanner .mode-slider {
+    background-color: var(--account-color);
+	padding: 6px;
+	color: var(--text-color);
+	cursor: pointer !important;
+	transition: .2s;
+}
+
+
+.account-scanner input:checked+.mode-slider {
+    background-color: var(--account-color);
+}
+
+.account-scanner .mode-slider.round {
+	border-radius: 34px;
+}
+
+
+.account-scanner .simple,
+.account-scanner .advanced {
+	font-size: 14px;
+	font-weight: bold;
+	border-radius: 24px;
+	padding: 7px 14px;
+	margin: 0;
+	height: 100%;
+	transition: 0.2s ease-in-out;
+}
+
+
+.account-scanner .simple {
+	background-color: var(--button-bg-hover);
+	color: white;
+}
+
+.account-scanner .advanced {
+    background-color: var(--account-color);
+	right: 0;
+	left: auto;
+}
+
+.account-scanner input:checked+.mode-slider .simple {
+    background-color: var(--account-color);
+	color: var(--text-color);
+}
+
+.account-scanner input:checked+.mode-slider .advanced {
+	background-color: var(--button-bg-hover);
+	color: white;
+}
+
+
+
+
+.accounts-info-wrapper {
+	display: grid;
+	place-items: center;
+}
+
+.accounts-info-wrapper p {
+	font-size: 1.6rem;
+	font-weight: bold;
+	margin: 10px 0;
+	text-align: center;
+}
+
+
+@keyframes fadeInUp {
+	0% {
+		opacity: 0;
+		transform: translateY(20px);
+	}
+
+	100% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+
+
+.loading-wrapper {
+	/* change color here */
+	position: absolute;
+	inset: calc(50% - 40px);
+	color: var(--light-green)
+}
+
+.lds-ring,
+.lds-ring div {
+	box-sizing: border-box;
+}
+
+.lds-ring {
+	display: inline-block;
+	position: relative;
+	width: 80px;
+	height: 80px;
+	color: var(--light-green)
+}
+
+.lds-ring div {
+	box-sizing: border-box;
+	display: block;
+	position: absolute;
+	width: 64px;
+	height: 64px;
+	margin: 8px;
+	border: 8px solid currentColor;
+	border-radius: 50%;
+	animation: lds-ring 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+	border-color: currentColor transparent transparent transparent;
+}
+
+.lds-ring div:nth-child(1) {
+	animation-delay: -0.45s;
+}
+
+.lds-ring div:nth-child(2) {
+	animation-delay: -0.3s;
+}
+
+.lds-ring div:nth-child(3) {
+	animation-delay: -0.15s;
+}
+
+@keyframes lds-ring {
+	0% {
+		transform: rotate(0deg);
+	}
+
+	100% {
+		transform: rotate(360deg);
+	}
+}
+
+
+@media screen and (max-width: 768px) {
+	.account-scanner {
+		padding: 30px;
+		min-height: 300px;
+		place-items: center;
+	}
+	.mode-switch-wrapper {
+		justify-content: center;
+	}
+
+	.account-scanner * {
+		position: static !important;
+	}
+
+
+	.account-scanner > img {
+		width: 80px;
+		inset: -40px auto auto -40px;
+		margin-bottom: 20px;
+	}
+
+	.account-scanner h2 {
+		font-size: 1.4rem;
+		inset: 30px 15% auto 15%;
+		width: 70%;
+	}
+
+	.wallet-wrapper {
+		padding-top: 20px;
+		gap: 10px;
+	}
+
+	.accounts-list {
+		margin-top: 30px;
+	}
+
+	.lds-ring {
+		width: 60px;
+		height: 60px;
+	}
+
+	.lds-ring div {
+		width: 48px;
+		height: 48px;
+		margin: 6px;
+		border-width: 6px;
+	}
+
+	.accounts-info-wrapper p {
+		font-size: 1.2rem;
+	}
+}
+
+@media screen and (max-width: 480px) {
+	.account-scanner {
+		padding: 20px;
+		min-height: 250px;
+		border-radius: 16px;
+	}
+
+	.account-scanner > img {
+		width: 60px;
+		inset: -30px auto auto -30px;
+	}
+
+	.wallet-wrapper {
+		inset: 20px 20px auto auto;
+	}
+
+	.accounts-list {
+		margin-top: 20px;
+	}
+
+	.lds-ring {
+		width: 40px;
+		height: 40px;
+	}
+
+	.lds-ring div {
+		width: 32px;
+		height: 32px;
+		margin: 4px;
+		border-width: 4px;
+	}
+}

@@ -1,0 +1,125 @@
+
+
+
+.affiliation-wrapper {
+    position: relative;
+}
+
+
+.affiliation {
+    position: absolute;
+    inset: 40px auto auto -200%;
+    width: 400px;
+    background-color: var(--bg-color);
+    margin-bottom: 20px;
+    border-radius: 12px;
+    border: 1px solid var(--light-green);
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.2s ease-in-out, transform 0.5s ease-in-out;
+}
+
+
+.affiliation-visible {
+    opacity: 1;
+    transform: translateY(0);
+    height: auto;
+    padding: 40px;
+}
+
+.affiliation-hidden {
+    opacity: 0;
+    transform: translateY(20px);
+    height: 0;
+    padding: 0;
+}
+.affiliation span {
+    font-size: 14px;
+}
+
+
+.affiliation p {
+    margin-top: 0;
+    font-size: 18px;
+}
+
+.affiliate-button {
+    box-sizing: border-box;
+    position: relative;
+    width: 100px;
+    height: 40px;
+    text-align: center;
+    background-color: var(--button-bg);
+    color: var(--button-text);
+    transition: background-color .2s, color .2s;
+}
+
+.affiliate-button:hover {
+    background-color: var(--button-bg-hover);
+    color: var(--button-text);
+}
+
+
+/* Handle text transitions */
+.affiliate-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out, height 0.5s ease-in-out;
+}
+
+.affiliate-text-show {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+}
+
+.affiliate-text-hide {
+    opacity: 0;
+    transform: translate(-50%, -60%);
+}
+
+
+/* Optional keyframe for additional smoothness, though transitions are enough */
+@keyframes affiliation-appears {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+        height: 0;
+        padding: 0;
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        height: auto;
+        padding: 40px;
+    }
+}
+
+
+
+@keyframes affiliation-appears {
+    0% {
+        opacity: 0;
+
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+
+
+@media screen and (max-width: 768px) {
+    .affiliation-wrapper {
+        position: static;
+    }
+    .affiliation {
+        box-sizing: border-box;
+        inset: 60px 5vw auto 5vw;
+        max-width: 90vw;
+    }
+}

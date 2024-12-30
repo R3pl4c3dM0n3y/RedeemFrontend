@@ -1,0 +1,235 @@
+:root {
+	--bg-color: #08cbed;
+	--text-color: #050404;
+	--header-bg: #e3e8ff;
+	--scanner-bg: #d4e7ff;
+	--button-bg: #191919;
+	--button-bg-hover: #08cbed;
+	--button-text: #ffffff;
+	--table-border: #ddd;
+	--table-header-bg: #e3e8ff;
+	--link-color: #0465ce;
+	--transition-speed: 0.3s;
+	--light-green: #07edbb;
+	--pink: #f4f3f8;
+	--dark-pink: #882a8f;
+
+	--shadow-color: #4a1d64;
+
+	--account-color: rgb(254, 238, 255);
+
+	--success-message-bg: rgb(219, 255, 243);
+	--warning-message-bg: rgb(255, 238, 205);
+	--error-message-bg: rgb(255, 212, 212);
+
+	font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+	line-height: 1.5;
+	font-weight: 400;
+
+	color-scheme: light dark;
+	color: rgba(255, 255, 255, 0.87);
+	background-color: #111011;
+
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+.dark-mode {
+	--bg-color: #9586C9;
+	--text-color: #ffffff;
+	--scanner-bg: #000000;
+	--header-bg: #222222;
+	--button-bg: #090b1c;
+	--button-bg-hover: #882a8f;
+	--button-text: #ffffff;
+	--table-border: #555555;
+	--table-header-bg: #091c0f;
+	--link-color: #4da3ff;
+
+	--shadow-color: #f6f1f7;
+
+	--account-color: #0f2820;
+
+	--success-message-bg: rgba(33, 120, 91, 1);
+	--warning-message-bg: rgba(255, 140, 0, 1);
+	--error-message-bg: rgba(255, 0, 0, 1);
+}
+
+
+a {
+	font-weight: 500;
+	color: #646cff;
+	text-decoration: inherit;
+}
+
+a:hover {
+	color: #535bf2;
+}
+
+
+
+
+section {
+	padding: 40px 0;
+}
+
+h1 {
+	font-size: 3.2em;
+	line-height: 1.1em;
+}
+
+.button,
+button {
+	font-weight: bold;
+	letter-spacing: 1px;
+	font-size: 16px;
+	padding: 0.5rem 1rem;
+	background-color: var(--button-bg);
+	color: var(--button-text);
+	border: 1px solid var(--button-text);
+	text-decoration: none;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: background-color var(--transition-speed);
+}
+
+.button,
+button:hover {
+	background-color: var(--button-bg-hover);
+
+}
+
+
+/* CSS */
+.cta-button {
+	border-radius: 12px;
+	padding: 0.6em 1.4em;
+	font-size: 1.2em;
+	outline: none;
+	border: none;
+	color: black;
+	position: relative;
+	z-index: 0;
+	border-radius: 10px;
+	user-select: none;
+	-webkit-user-select: none;
+	touch-action: manipulation;
+	transition: .3s;
+}
+
+.cta-button:hover {
+	color: var(--button-text);
+}
+
+.cta-button:before {
+	content: "";
+	background: linear-gradient(45deg,
+			#ff0000,
+			#ff7300,
+			#fffb00,
+			#48ff00,
+			#00ffd5,
+			#002bff,
+			#7a00ff,
+			#ff00c8,
+			#ff0000);
+	position: absolute;
+	top: -2px;
+	left: -2px;
+	background-size: 400%;
+	z-index: -1;
+	filter: blur(5px);
+	-webkit-filter: blur(5px);
+	width: calc(100% + 4px);
+	height: calc(100% + 4px);
+	animation: glowing-button-85 20s linear infinite;
+	transition: opacity 0.3s ease-in-out;
+	border-radius: 10px;
+}
+
+.cta-button:after {
+	z-index: -1;
+	content: "";
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	background: linear-gradient(45deg, white 50%, var(--button-bg-hover) 50%);
+	background-size: 240%;
+	background-position: 0%;
+	left: 0;
+	top: 0;
+	border-radius: 10px;
+	transition: .3s;
+}
+
+.cta-button:hover::after {
+	background-position: 98%;
+}
+
+
+.gradient-text {
+	background: linear-gradient(45deg, var(--pink), var(--text-color));
+	background-clip: text;
+	fill: transparent;
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+}
+
+
+
+/* LOADING CIRCLE */
+.loading-circle {
+	display: inline-block;
+	width: 24px;
+	/* Fixed size */
+	height: 24px;
+	/* Fixed size */
+	border: 4px solid var(--pink);
+	/* Primary color */
+	border-radius: 50%;
+	border-top-color: transparent;
+	/* Transparent top for spinning effect */
+	animation: spin 1s linear infinite;
+	/* Smooth spinning */
+}
+
+@keyframes spin {
+	0% {
+		transform: rotate(0deg);
+	}
+
+	100% {
+		transform: rotate(360deg);
+	}
+}
+
+
+
+@keyframes glowing-button-85 {
+	0% {
+		background-position: 0 0;
+	}
+
+	50% {
+		background-position: 400% 0;
+	}
+
+	100% {
+		background-position: 0 0;
+	}
+}
+
+
+@keyframes button {
+	0% {
+		opacity: 0;
+		transform: translateY(20px);
+	}
+
+	100% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}

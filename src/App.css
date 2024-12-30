@@ -1,0 +1,321 @@
+
+
+* {
+	box-sizing: border-box;
+}
+
+body,
+html {
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	scroll-behavior: smooth;
+}
+
+body {
+	margin: 0;
+	display: flex;
+	place-items: center;
+	width: 100%;
+	min-height: 100vh;
+
+	font-family: Arial, sans-serif;
+
+	background: var(--bg-color);
+	background-size: 140%;
+	background-position: 100%;
+	background-attachment: fixed;
+	color: var(--text-color);
+	transition: .2s;
+
+	display: flex;
+	flex-direction: column;
+}
+
+.app {
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	min-height: 100vh;
+	width: 100%;
+	max-width: 1050px;
+	margin: 0;
+	padding: 0;
+}
+
+main {
+	flex: 1;
+	width: 100%;
+	margin: 0 auto 0 auto;
+	padding: 0 1rem;
+	box-sizing: border-box;
+}
+
+.content-wrapper {
+	max-width: 1050px;
+	margin: 0 auto;
+	width: 100%;
+}
+
+
+
+.hero {
+    display: grid;
+    place-items: center;
+}
+
+
+
+.hero .content {
+    display: grid;
+    place-items: center;
+    max-width: 800px;
+    gap: 20px;
+    text-align: center;
+    margin-top: 40px;
+}
+
+.hero h1 {
+    margin: 0;
+    font-weight: bolder;
+}
+
+.hero p {
+    max-width: 400px;
+}
+
+.hero .button-container {
+    display: grid;
+    gap: 20px;
+    place-items: center;
+    margin-top: 20px;
+}
+
+
+
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+	margin-top: 2rem;
+	border-color: var(--table-border);
+	transition: border-color var(--transition-speed);
+}
+
+th,
+td {
+	border: 1px solid var(--table-border);
+	padding: 0.5rem;
+	transition: border-color var(--transition-speed);
+}
+
+th {
+	background-color: var(--table-header-bg);
+	transition: background-color var(--transition-speed);
+}
+
+footer {
+	box-sizing: border-box;
+	width: 100%;
+	padding: 1rem;
+	text-align: center;
+	transition: background-color var(--transition-speed);
+}
+
+.footer-logo {
+	max-width: 100px;
+	height: auto;
+}
+
+.theme-switch-wrapper {
+	display: flex;
+	align-items: center;
+}
+
+.theme-switch {
+	display: inline-block;
+	height: 34px;
+	position: relative;
+	width: 60px;
+}
+
+.theme-switch input {
+	display: none;
+}
+
+.slider {
+	background-color: var(--text-color);
+	bottom: 0;
+	cursor: pointer;
+	left: 0;
+	position: absolute;
+	right: 0;
+	top: 0;
+	transition: .4s;
+}
+
+.slider:before {
+	background-color: var(--bg-color);
+	bottom: 4px;
+	content: "";
+	height: 26px;
+	left: 4px;
+	position: absolute;
+	transition: .4s;
+	width: 26px;
+}
+
+input:checked+.slider {
+	background-color: var(--text-color);
+}
+
+input:checked+.slider:before {
+	transform: translateX(26px);
+}
+
+.slider.round {
+	border-radius: 34px;
+}
+
+.slider.round:before {
+	border-radius: 50%;
+}
+
+.sun,
+.moon {
+	position: absolute;
+	width: 20px;
+	height: 20px;
+	top: 7px;
+	left: 7px;
+	transition: 0.2s ease-in-out;
+}
+
+.sun svg,
+.moon svg {
+	fill: var(--bg-color);
+}
+
+.sun {
+	opacity: 0;
+}
+
+.moon {
+	opacity: 1;
+	right: 7px;
+	left: auto;
+}
+
+input:checked+.slider .sun {
+	opacity: 1;
+}
+
+input:checked+.slider .moon {
+	opacity: 0;
+}
+
+.policy-link {
+	margin: 0 0.5rem;
+	color: var(--link-color);
+	text-decoration: none;
+	transition: color var(--transition-speed);
+}
+
+#x-account-link img,
+#telegram-bot-link img {
+	display: block;
+	width: 32px;
+	height: auto;
+	transition: filter var(--transition-speed);
+}
+
+.dark-mode #x-account-link img,
+.dark-mode #telegram-bot-link img {
+	filter: brightness(0.8) contrast(1.2);
+}
+
+
+
+.small-link {
+	font-size: 0.8rem;
+	text-decoration: none;
+	transition: color .2s;
+}
+
+
+
+.smooth-appear {
+    animation: fade-in-down 0.6s ease-out forwards;
+    opacity: 0;
+}
+
+@keyframes fade-in-down {
+    0% {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+
+
+
+/* Media query for responsive design */
+@media screen and (max-width: 768px) {
+    .theme-switch-wrapper {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .policy-link {
+        display: block;
+        margin: 10px 0;
+    }
+
+    #x-account-link img,
+    #telegram-bot-link img {
+        width: 24px;
+    }
+
+
+    .hero .content {
+        max-width: 100%;
+        padding: 0 20px;
+    }
+
+    .hero h1 {
+        font-size: 1.5rem;
+    }
+
+    .hero p {
+        font-size: 0.9rem;
+    }
+
+    main {
+        margin-top: -20px;
+    }
+}
+
+/* Additional responsive adjustments for even smaller screens */
+@media screen and (max-width: 480px) {
+	.hero .top-middle {
+		margin-top: 80px;
+	}
+    .hero .top-middle, .hero .top-middle img {
+        width: 240px !important;
+    }
+
+    .hero h1 {
+        font-size: 1.8rem;
+    }
+
+    .hero p {
+        font-size: 0.8rem;
+    }
+
+}

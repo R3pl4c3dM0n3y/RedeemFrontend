@@ -1,0 +1,131 @@
+
+
+
+.record-card {
+	width: 100%;
+	align-items: center;
+	padding: 40px 20px;
+	background-color: var(--bg-color);
+	box-shadow: 0 0 40px -20px var(--shadow-color);
+	text-align: center;
+	border-radius: 12px;
+}
+
+.record-card p {
+	font-weight: bold;
+	font-size: 32px;
+	margin: 0;
+}
+
+
+.claimed-sol-table {
+    table-layout: fixed;
+    margin-top: 60px;
+    width: 100%;
+    overflow: hidden;
+}
+
+.claimed-sol-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+}
+
+.claimed-sol-table th {
+    font-weight: lighter;
+}
+
+.record-columns-wrapper {
+	width: 100%;
+	display: grid;
+	place-items: center;
+	position: relative;
+	margin: 0;
+	padding: 0;
+}
+
+
+
+.record-columns {
+	width: 100%;
+	margin: 20px 0 0 0;
+	display: grid;
+	grid-template-columns: 1fr 1fr 1fr;
+	place-items: center;
+	inset: auto auto 20px auto;
+	gap: 20px;
+}
+
+
+/* Responsive styles for ClaimedSol component */
+
+@media screen and (max-width: 768px) {
+
+    .record-columns {
+        grid-template-columns: 1fr;
+    }
+    .record-card {
+        padding: 30px 15px;
+    }
+
+    .record-card p {
+        font-size: 28px;
+    }
+
+    .claimed-sol-table {
+        margin-top: 40px;
+    }
+
+    .claimed-sol-table td {
+        font-size: 0.8rem;
+    }
+
+    .claimed-sol-table th {
+        font-size: 0.8rem;
+    }
+    
+}
+
+@media screen and (max-width: 480px) {
+    .record-card {
+        padding: 20px 10px;
+    }
+
+    .record-card p {
+        font-size: 24px;
+    }
+
+    .claimed-sol-table {
+        margin-top: 30px;
+        font-size: 14px;
+    }
+
+    .claimed-sol-table td {
+        padding: 0.3rem;
+    }
+
+    .claimed-sol-table th {
+        font-size: 0.7rem;
+    }
+    
+}
+
+/* Additional responsive adjustments for even smaller screens */
+@media screen and (max-width: 320px) {
+    .record-card {
+        padding: 15px 5px;
+    }
+
+    .record-card p {
+        font-size: 20px;
+    }
+
+    .claimed-sol-table {
+        margin-top: 20px;
+        font-size: 12px;
+    }
+
+    .claimed-sol-table td {
+        padding: 0.2rem;
+    }
+}
