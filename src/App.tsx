@@ -96,16 +96,26 @@ function App() {
           <div className="content">
             <h1>
               <span className="gradient-text">
-                Recovering your SOL is easier than ever.
+                Welcome to Redeem. The safest way to reclaim Solana storage
+                fees.
               </span>
             </h1>
 
             {!walletAddress && (
               <>
                 <p>
-                  Close unused accounts — whether they’re empty or still holding
-                  tokens. <br />
-                  No SOL? No Problem. In that case, we’ll cover the fees! <br />
+                  A little known fact on the Solana blockchain is that when you
+                  purchase a meme token, a portion of your funds covers network
+                  storage fees that build up over time. <br />
+                  <br />
+                  These storage fees are held on the solana network even once
+                  you have completely sold your holding. <br />
+                  <br />
+                  Redeem allows Solana wallet holders to analyse hidden storage
+                  fees attached to old meme tokens (even ones you no longer
+                  hold). This allows you to reclaim these valuable funds from
+                  the Solana network in just a few steps. Connect Wallet → Scan
+                  Accounts → Reclaim SOL <br />
                   <a href="#how-it-works" className="small-link gradient-text">
                     How It Works
                   </a>
