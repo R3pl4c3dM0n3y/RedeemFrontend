@@ -64,39 +64,58 @@ export function ClaimedSol() {
         </section>
         <section className="account-scanner">
           <img src="/images/solanatoken.png"></img>
-          <h2>Latest Claimed SOL</h2>
+          <div
+            style={{
+              fontSize: "32px",
+              textAlign: "center",
+              fontWeight: "700",
+              marginBottom: "20px",
+            }}
+          >
+            Latest Claimed SOL
+          </div>
 
-          <table className="claimed-sol-table" id="data-Table">
-            <thead>
-              <tr>
-                <th>Transaction id</th>
-                <th>Accounts Closed</th>
-                <th>Claimed SOL</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {claimedSOL.map((claim, index) => (
-                <tr key={index}>
-                  <td>
+          <div style={{ marginTop: "40px !important" }}>
+            {claimedSOL.map((claim, index) => (
+              <div
+                key={claim.transaction_id}
+                className="account-item "
+                style={{ animationDelay: `${index * 0.1}s`, width: "100%" }}
+              >
+                <article className="account">
+                  <div className="account-info" style={{ width: "100%" }}>
                     <a
                       target="_blank"
+                      style={{
+                        maxWidth: "140px",
+                        overflow: "hidden",
+                        whiteSpace: "nowrap",
+                        textOverflow: "ellipsis",
+                        display: "inline-block",
+                      }}
                       href={"https://solscan.io/tx/" + claim.transaction_id}
                     >
                       {claim.transaction_id}
                     </a>
-                  </td>
-                  <td>{claim.accounts_closed}</td>
-                  <td>{claim.sol_received.toString().substring(0, 7)} SOL</td>
-                  <td>
-                    {claim.claimed_at instanceof Date
-                      ? claim.claimed_at.toLocaleString()
-                      : ""}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+                    <p>
+                      <b>{claim.sol_received.toString().substring(0, 7)} SOL</b>
+                    </p>
+                    <p>
+                      <b>{claim.accounts_closed}</b>
+                    </p>
+
+                    <b>
+                      {" "}
+                      {claim.claimed_at instanceof Date
+                        ? claim.claimed_at.toLocaleString()
+                        : ""}
+                    </b>
+                  </div>
+                </article>
+              </div>
+            ))}
+          </div>
         </section>
       </>
     )

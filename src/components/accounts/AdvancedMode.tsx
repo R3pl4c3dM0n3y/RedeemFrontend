@@ -2,15 +2,35 @@ import "./AccountsScanner.css";
 import { TokenAccount } from "../../interfaces/TokenAccount";
 import AccountWithBalance from "./AccountWithBalance";
 import { useEffect, useState, useCallback } from "react";
-import { getAccountsWithBalanceFromAddress } from "../../api/accounts";
-import { useWallet } from "@solana/wallet-adapter-react";
+import {
+  closeAccountWithBalanceTransaction,
+  getAccountsWithBalanceFromAddress,
+} from "../../api/accounts";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { storeClaimTransaction } from "../../api/claimTransactions";
+import { updateAffiliatedWallet } from "../../api/affiliation";
+import { PublicKey } from "@solana/web3.js";
+import { getCookie } from "../../utils/cookies";
+import { Message, MessageState } from "../Message";
 
 function AdvancedMode() {
-  const { publicKey } = useWallet();
+  const { publicKey, signTransaction } = useWallet();
   const [warningAccepted, setWarningAccepted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tokenAccounts, setTokenAccounts] = useState<TokenAccount[]>();
   const [error, setError] = useState<string | null>(null);
+  const { connection } = useConnection();
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+
+  const handleSelectAccount = (pubkey: string, isSelected: boolean) => {
+    setSelectedAccounts((prev) =>
+      isSelected
+        ? [...prev, pubkey]
+        : prev.filter((selected) => selected !== pubkey)
+    );
+  };
 
   const scanTokenAccounts = useCallback(
     async (forceReload: boolean = false) => {
@@ -56,6 +76,89 @@ function AdvancedMode() {
       scanTokenAccounts();
     }
   }, [warningAccepted, scanTokenAccounts]);
+
+  async function closeAccountWIthBalance(accountPubkey: string): Promise<void> {
+    if (!publicKey) {
+      setError("Wallet not connected");
+      return;
+    }
+
+    if (!signTransaction) throw new Error("Error signing transaction");
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const accountToClose = new PublicKey(accountPubkey);
+
+      const code = getCookie("referral_code");
+      const { transaction, solReceived, solShared } =
+        await closeAccountWithBalanceTransaction(
+          publicKey,
+          accountToClose,
+          code
+        );
+
+      const signedTransaction = await signTransaction(transaction);
+
+      let blockhash = transaction.recentBlockhash;
+      let lastValidBlockHeight = transaction.lastValidBlockHeight;
+
+      if (!blockhash || !lastValidBlockHeight) {
+        const latestBlockhash = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+        blockhash = transaction.recentBlockhash;
+        lastValidBlockHeight = transaction.lastValidBlockHeight;
+      }
+
+      // Serialize the signed transaction
+      const serializedTransaction = signedTransaction.serialize();
+
+      // Send the signed transaction
+      const signature = await connection.sendRawTransaction(
+        serializedTransaction,
+        {
+          skipPreflight: false, // Perform preflight checks
+          preflightCommitment: "confirmed", // Preflight commitment level
+        }
+      );
+
+      if (!transaction.recentBlockhash)
+        throw new Error("Block hash not provided by server");
+
+      // Confirm the transaction
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }); // Specify the desired commitment level
+
+      if (confirmation.value.err) {
+        throw new Error("Transaction failed to confirm");
+      }
+
+      storeClaimTransaction(publicKey.toBase58(), signature, solReceived);
+
+      if (code && solShared) {
+        await updateAffiliatedWallet(publicKey.toBase58(), solShared);
+      }
+      setStatusMessage(`Account closed successfully. Signature: ${signature}`);
+      // Refresh the account list
+    } catch (err) {
+      console.error("Detailed error:", err);
+      setStatusMessage("");
+      setError(
+        "Error closing account: " +
+          (err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      setLoading(false);
+      setTimeout(() => {
+        scanTokenAccounts(true);
+      }, 3000);
+    }
+  }
 
   return (
     <>
@@ -131,14 +234,52 @@ function AdvancedMode() {
             </p>
           ) : (
             <div className="accounts-list">
+              {selectedAccounts.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    width: "100%",
+                  }}
+                >
+                  <button
+                    onClick={() =>
+                      selectedAccounts.forEach((pubkey) =>
+                        closeAccountWIthBalance(pubkey)
+                      )
+                    }
+                    disabled={selectedAccounts.length === 0}
+                  >
+                    Force Close Selected
+                  </button>
+                </div>
+              )}
+
               {tokenAccounts?.map((account, index) => (
                 <AccountWithBalance
                   key={index}
                   index={index}
                   scanTokenAccounts={scanTokenAccounts}
                   account={account}
+                  onSelectAccount={handleSelectAccount}
                 />
               ))}
+
+              {statusMessage && !error ? (
+                <Message state={MessageState.SUCCESS}>
+                  <p>{statusMessage}</p>
+                </Message>
+              ) : (
+                <></>
+              )}
+
+              {error ? (
+                <Message state={MessageState.ERROR}>
+                  <p>{error}</p>
+                </Message>
+              ) : (
+                <></>
+              )}
             </div>
           )}
         </>
