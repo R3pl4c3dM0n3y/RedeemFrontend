@@ -13,13 +13,12 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 window.Buffer = Buffer;
 
 const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
-
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <ConnectionProvider
-      endpoint={"https://betterclaimsol.xyz/api/solana-endpoint"}
+      endpoint={"https://radeembackend.vercel.app/api/solana-endpoint"}
       config={{
-        wsEndpoint: "wss://betterclaimsol.xyz/api/solana-endpoint"
+        wsEndpoint: "wss://radeembackend.vercel.app/api/solana-endpoint"
       }}
     >
       <WalletProvider wallets={wallets} autoConnect>

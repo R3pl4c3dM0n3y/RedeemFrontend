@@ -8,7 +8,7 @@ interface AffiliationProps {
     walletAddress: string
 }
 
-const DOMAIN = "betterclaimsol.xyz"
+const DOMAIN = "redeemonsol.com"
 
 export function Affiliation(props: AffiliationProps) {
 
