@@ -1,5 +1,10 @@
 import { useCallback, useState, useEffect } from "react";
-import { PublicKey, Transaction } from "@solana/web3.js";
+import {
+  PublicKey,
+  Transaction,
+  Connection,
+  ComputeBudgetProgram,
+} from "@solana/web3.js";
 import "./AccountsScanner.css";
 import { TokenAccount } from "../../interfaces/TokenAccount";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -13,6 +18,7 @@ import { getCookie } from "../../utils/cookies";
 import { updateAffiliatedWallet } from "../../api/affiliation";
 
 // 1) Helper to chunk an array of items into groups of a specified size.
+//    We set this chunkSize to 20, so each transaction tries to close up to 20 accounts.
 function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
   const result = [];
   for (let i = 0; i < arr.length; i += chunkSize) {
@@ -21,11 +27,12 @@ function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
   return result;
 }
 
-// 2) Build an array of *unsigned* transactions — one for each chunk of 3.
+// 2) Build an array of *unsigned* transactions — one for each chunk of up to 20 accounts.
 async function buildAllCloseTxs(
   userPublicKey: PublicKey,
   accountChunks: PublicKey[][],
-  referralCode: string | null
+  referralCode: string | null,
+  connection: Connection
 ): Promise<
   Array<{
     transaction: Transaction;
@@ -42,10 +49,28 @@ async function buildAllCloseTxs(
   }> = [];
 
   for (const chunk of accountChunks) {
-    // For each chunk, ask backend for a "close-account-bunch" transaction
+    // For each chunk of up to 20 accounts, ask backend for a "close-account-bunch" transaction.
+    // The backend creates instructions for closing each account in that chunk.
     const { transaction, solReceived, solShared } =
       await closeAccountBunchTransaction(userPublicKey, chunk, referralCode);
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // OPTIONAL: Add a compute budget instruction to handle bigger instructions
+    // ─────────────────────────────────────────────────────────────────────────────
+    // This helps if 20 close instructions exceed the default compute limit.
+    // (1,400,000 is the approximate max you can request as of 2023)
+    // Increase or decrease as needed. You can also set a priority fee in lamports if you want faster confirmation.
+    const computeIx = ComputeBudgetProgram.setComputeUnitLimit({
+      units: 1_400_000,
+    });
+    // Another optional instruction to set a micro-lamport price per CU (priority fee).
+    // const addPriorityFeeIx = ComputeBudgetProgram.setComputeUnitPrice({
+    //   microLamports: 1,
+    // });
+    transaction.add(computeIx);
+    // transaction.add(addPriorityFeeIx);
+
+    // Now the transaction includes the compute budget request, then the close instructions.
     results.push({
       transaction,
       chunkSize: chunk.length,
@@ -70,7 +95,7 @@ function SimpleMode() {
   const [walletBalance, setWalletBalance] = useState<number>(0);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Fetch token accounts with zero balance + current wallet SOL balance
+  // Fetch token accounts (with zero balance) + wallet SOL balance
   // ─────────────────────────────────────────────────────────────────────────────
   const scanTokenAccounts = useCallback(
     async (forceReload: boolean = false) => {
@@ -115,13 +140,13 @@ function SimpleMode() {
     }
   }, [publicKey, scanTokenAccounts]);
 
-  // Calculate how much SOL can be reclaimed from rent
+  // How much SOL can be reclaimed from rent
   const totalUnlockableSol = tokenAccounts
     .reduce((sum, account) => sum + (account.rentAmount || 0), 0)
     .toFixed(5);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Close all accounts in bulk with one wallet pop-up
+  // Close accounts in a single pop-up, chunking up to 20 accounts per transaction
   // ─────────────────────────────────────────────────────────────────────────────
   async function closeAllAccounts() {
     if (!publicKey) {
@@ -155,19 +180,25 @@ function SimpleMode() {
         return;
       }
 
-      // 2) Break the account keys into groups of 3 instructions each
-      const chunkedKeys = chunkArray(accountKeys, 3);
+      // 2) Break the account keys into groups of up to 20
+      //    If 20 is still too big, try smaller (10) or bigger if you want fewer transactions
+      const chunkedKeys = chunkArray(accountKeys, 20);
       if (chunkedKeys.length === 0) {
         setError("No token accounts found to close.");
         setIsLoading(false);
         return;
       }
 
-      // 3) Build all transactions for each chunk
+      // 3) Build all transactions (unsigned)
       const referralCode = getCookie("referral_code");
-      const allCloseTxs = await buildAllCloseTxs(publicKey, chunkedKeys, referralCode);
+      const allCloseTxs = await buildAllCloseTxs(
+        publicKey,
+        chunkedKeys,
+        referralCode,
+        connection
+      );
 
-      // 4) Right before signing, refresh each transaction's blockhash so it isn't stale
+      // 4) Right before signing, fetch a fresh blockhash so none are stale
       const latestBlockhash = await connection.getLatestBlockhash();
       for (const item of allCloseTxs) {
         item.transaction.recentBlockhash = latestBlockhash.blockhash;
@@ -176,7 +207,9 @@ function SimpleMode() {
 
       // 5) signAllTransactions(...) with the updated blockhash
       const unsignedTxs = allCloseTxs.map((item) => item.transaction);
-      console.log(`Built ${unsignedTxs.length} transactions. Signing them all...`);
+      console.log(
+        `Built ${unsignedTxs.length} transactions (up to 20 accounts each). Signing them all...`
+      );
       const signedTxs = await signAllTransactions(unsignedTxs);
       console.log("Signed all transactions:", signedTxs);
 
@@ -184,18 +217,19 @@ function SimpleMode() {
       let totalSolReceived = 0;
       let totalSolShared = 0;
 
-      // 6) Immediately send + confirm each signed transaction
+      // 6) Send + confirm each signed transaction
       for (let i = 0; i < signedTxs.length; i++) {
         const signedTx = signedTxs[i];
         const { solReceived, solShared, chunkSize } = allCloseTxs[i];
 
-        // (Optional) If user waited too long, blockhash might be invalid. 
-        // Usually it's still fresh, so we skip re-signing. Just proceed to send.
-
-        const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-        });
+        // Send the transaction
+        const signature = await connection.sendRawTransaction(
+          signedTx.serialize(),
+          {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          }
+        );
 
         // Confirm each transaction
         const confirmation = await connection.confirmTransaction({
@@ -228,6 +262,7 @@ function SimpleMode() {
       // 8) Done. Show final success message
       setStatusMessage(
         `All ${signedTxs.length} transactions confirmed with one pop-up.
+         Up to 20 accounts closed per transaction.
          Total SOL reclaimed: ${totalSolReceived.toFixed(6)}
          (Shared: ${totalSolShared.toFixed(6)})`
       );
