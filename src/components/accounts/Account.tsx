@@ -1,129 +1,174 @@
-    import { useState } from 'react';
-    import { PublicKey } from '@solana/web3.js'; 
-    import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-    import "./AccountsScanner.css"
-    import { closeAccountTransaction } from '../../api/accounts';
-    import { TokenAccount } from '../../interfaces/TokenAccount';
-    import "./Account.css"
-    import { Message, MessageState } from '../Message.tsx';
-    import { storeClaimTransaction } from '../../api/claimTransactions';
-    import { getCookie } from '../../utils/cookies.ts';
-    import { updateAffiliatedWallet } from '../../api/affiliation.ts';
+import { useState } from "react";
+import { PublicKey } from "@solana/web3.js";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import "./AccountsScanner.css";
+import { closeAccountTransaction } from "../../api/accounts";
+import { TokenAccount } from "../../interfaces/TokenAccount";
+import "./Account.css";
+import { Message, MessageState } from "../Message";
+import { storeClaimTransaction } from "../../api/claimTransactions";
+import { getCookie } from "../../utils/cookies";
+import { updateAffiliatedWallet } from "../../api/affiliation";
 
+interface AccountProps {
+  account: TokenAccount;
+  scanTokenAccounts: () => void;
+}
 
-    interface AccountProps {
-        account: TokenAccount
-        scanTokenAccounts: () => void
+function Account(props: AccountProps) {
+  const { publicKey, signTransaction } = useWallet();
+  const { connection } = useConnection();
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const account = props.account;
+
+  const closeAccount = async (accountPubkey: string) => {
+    if (!publicKey) {
+      setError("Wallet not connected");
+      return;
     }
 
-    /* const DESTINATION_SHARE = 0.15; */
+    try {
+      setIsLoading(true);
+      setError(null);
+      setStatusMessage("Processing transaction...");
 
-    function Account(props: AccountProps) {
-        const { publicKey, signTransaction } = useWallet(); // sendTransaction
-        const [isLoading, setIsLoading] = useState(false);
-        const { connection } = useConnection();
-        const [error, setError] = useState<string | null>(null);
-        const [statusMessage, setStatusMessage] = useState<string | null>(null);
+      const code = getCookie("referral_code");
+      const accountToClose = new PublicKey(accountPubkey);
 
-        const account = props.account
+      // 1) Ask the backend for a transaction
+      const { transaction, solReceived, solShared } = await closeAccountTransaction(
+        publicKey,
+        accountToClose,
+        code
+      );
 
-        const closeAccount = async (accountPubkey: string) => {
-            if (!publicKey) {
-                setError("Wallet not connected");
-                return;
-            }
+      // 2) signTransaction
+      if (!signTransaction) {
+        throw new Error("Wallet does not support signTransaction");
+      }
+      const signedTransaction = await signTransaction(transaction);
 
-            try {
-                setIsLoading(true);
-                setError(null);
-                setStatusMessage("Processing transaction...");
+      // 3) Serialize + send
+      const serializedTx = signedTransaction.serialize();
+      const signature = await connection.sendRawTransaction(serializedTx, {
+        skipPreflight: false,
+        preflightCommitment: "processed",
+      });
 
-                const accountToClose = new PublicKey(accountPubkey);
+      // 4) Confirm
+      let blockhash = transaction.recentBlockhash;
+      let lastValidBlockHeight = transaction.lastValidBlockHeight;
+      if (!blockhash || !lastValidBlockHeight) {
+        const latestBlockhash = await connection.getLatestBlockhash();
+        blockhash = latestBlockhash.blockhash;
+        lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+      }
 
-                const code = getCookie("referral_code")
-                const {transaction, solReceived, solShared } = await closeAccountTransaction(publicKey, accountToClose, code)
+      try {
+        const confirmation = await connection.confirmTransaction({
+          signature,
+          blockhash,
+          lastValidBlockHeight,
+        });
+        if (confirmation.value.err) {
+          throw new Error("Transaction failed to confirm");
+        }
+      } catch (err) {
+        // ─────────────────────────────────────────────────────────────────
+        // FALLBACK: Possibly "TransactionExpiredBlockheightExceededError"
+        // ─────────────────────────────────────────────────────────────────
+        if (
+          err instanceof Error &&
+          err.message.includes("TransactionExpiredBlockheightExceededError")
+        ) {
+          console.warn("Blockhash expired. Checking chain for success...");
 
+          // Re-check on chain:
+          const txInfo = await connection.getTransaction(signature, {
+            commitment: "confirmed",
+          });
+          if (txInfo && !txInfo.meta?.err) {
+            console.log("Transaction actually succeeded on chain despite expiry.");
+            // We do NOT throw here. We continue as success.
+          } else {
+            throw new Error("Blockhash expired, not found on chain => fail.");
+          }
+        } else {
+          throw err; // rethrow anything else
+        }
+      }
 
-                if(!signTransaction)
-                    throw new Error("Error signing transaction")
+      // 5) If we get here, it’s considered success
+      await storeClaimTransaction(publicKey.toBase58(), signature, solReceived);
 
-                const signedTransaction = await signTransaction(transaction);
-            
-                // Serialize the signed transaction
-                const serializedTransaction = signedTransaction.serialize();
+      if (code && solShared) {
+        await updateAffiliatedWallet(code, solShared);
+      }
 
-            
-                // Send the signed transaction
-                const signature = await connection.sendRawTransaction(serializedTransaction, {
-                skipPreflight: false,         // Perform preflight checks
-                preflightCommitment: 'processed', // Preflight commitment level
-                });
-            
+      setStatusMessage(`Account closed successfully. Signature: ${signature}`);
+    } catch (err) {
+      console.error("Detailed error:", err);
+      setStatusMessage("");
+      setError(
+        "Error closing account: " + (err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      setIsLoading(false);
+      // Re-scan the token accounts
+      props.scanTokenAccounts();
 
-                const blockhash = transaction.recentBlockhash
-                const lastValidBlockHeight = transaction.lastValidBlockHeight
+      // Clear messages after a short delay
+      setTimeout(() => {
+        setStatusMessage("");
+        setError("");
+      }, 3000);
+    }
+  };
 
-                if(!blockhash || !lastValidBlockHeight)
-                    throw new Error("Block hash or Block height not provided by server")
-                
-                // Confirm the transaction
-                const confirmation = await connection.confirmTransaction({
-                signature,
-                blockhash,
-                lastValidBlockHeight,
-                });  // Specify the desired commitment level 
+  return (
+    <>
+      <article className="account" key={account.pubkey}>
+        <div className="account-info">
+          <p>
+            <b>Account: </b>
+            <br />
+            {account.pubkey}
+          </p>
+          <p>
+            <b>Mint: </b>
+            <br />
+            {account.mint}
+          </p>
+          <p>
+            <b>Balance: </b>
+            <br />
+            {account.balance} SOL
+          </p>
+        </div>
+        <button onClick={() => closeAccount(account.pubkey)}>Close Account</button>
+      </article>
 
-                if (confirmation.value.err) {
-                    throw new Error("Transaction failed to confirm");
-                }
+      {isLoading && (
+        <Message state={MessageState.SUCCESS}>
+          <p>Loading...</p>
+        </Message>
+      )}
+      {statusMessage && !error && (
+        <Message state={MessageState.SUCCESS}>
+          <p>{statusMessage}</p>
+        </Message>
+      )}
+      {error && (
+        <Message state={MessageState.ERROR}>
+          <p>{error}</p>
+        </Message>
+      )}
+    </>
+  );
+}
 
-                storeClaimTransaction(publicKey.toBase58(), signature, solReceived)
-                
-                if(code && solShared)
-                    updateAffiliatedWallet(code, solShared)
-
-                setStatusMessage(`Account closed successfully. Signature: ${signature}`);
-                
-            } catch (err) {
-                console.error("Detailed error:", err);
-                setStatusMessage('')
-                setError('Error closing account: ' + (err instanceof Error ? err.message : String(err)));
-            } finally {
-                setIsLoading(false);
-                // Refresh the account list
-                props.scanTokenAccounts()
-
-                setTimeout(() => {
-                    setStatusMessage('')
-                    setError('')
-                }, 3000) 
-            }
-        };
-
-        return (<>
-            <article className='account' key={account.pubkey}>
-                <div className='account-info'>
-                    <p><b>Account: </b> <br/>{account.pubkey}</p>
-                    <p><b>Mint: </b><br/>{account.mint}</p>
-                    <p><b>Balance: </b><br/>{account.balance} Sol</p>
-                </div>
-                <button onClick={() => closeAccount(account.pubkey)}>
-                    Close Account
-                </button>
-            </article>
-            {isLoading ? <Message state={MessageState.SUCCESS}>
-                    <p>Loading...</p>
-                </Message> : <></>}
-
-                {statusMessage ? <Message state={MessageState.SUCCESS}>
-                    <p>{statusMessage}</p>
-                </Message> : <></>}
-
-                {error ? <Message state={MessageState.ERROR}>
-                    <p>{error}</p>
-                </Message> : <></>}
-        </>
-        );
-    };
-
-    export default Account;
+export default Account;
