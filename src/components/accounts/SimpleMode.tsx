@@ -24,7 +24,7 @@ interface CloseTxData {
 
 /** Helper to chunk an array into ~70 accounts each */
 function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
-  const result = [];
+  const result: T[][] = [];
   for (let i = 0; i < arr.length; i += chunkSize) {
     result.push(arr.slice(i, i + chunkSize));
   }
@@ -33,7 +33,6 @@ function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
 
 /** 
  * (Optional) type for the backend response of closeAccountBunchTransaction
- * if your backend returns solShared, etc.
  */
 interface CloseBunchResponse {
   transaction: Transaction;
@@ -54,17 +53,13 @@ async function buildAllCloseTxs(
   const results: CloseTxData[] = [];
 
   for (const chunk of accountChunks) {
-    // For each chunk of up to 70 accounts, ask your backend for a transaction
-    // If your backend returns additional fields, update the interface accordingly.
     const response = await closeAccountBunchTransaction(
       userPublicKey,
       chunk,
       referralCode
-    ) as CloseBunchResponse; // cast if needed
+    ) as CloseBunchResponse;
 
-    // Extract your needed fields
     const { transaction, solReceived, solShared } = response;
-
     results.push({
       transaction,
       chunkSize: chunk.length,
@@ -87,7 +82,9 @@ function SimpleMode() {
   const [tokenAccounts, setTokenAccounts] = useState<TokenAccount[]>([]);
   const [walletBalance, setWalletBalance] = useState<number>(0);
 
-  // Fetch accounts + wallet balance
+  // ─────────────────────────────────────────────────────────────────
+  // Fetch token accounts (with zero balance) + current wallet SOL balance
+  // ─────────────────────────────────────────────────────────────────
   const scanTokenAccounts = useCallback(
     async (forceReload: boolean = false) => {
       if (!publicKey) {
@@ -97,6 +94,7 @@ function SimpleMode() {
       try {
         setError(null);
         console.log("Fetching token accounts...");
+
         const accounts = await getAccountsWithoutBalanceFromAddress(
           publicKey,
           forceReload
@@ -104,7 +102,7 @@ function SimpleMode() {
         console.log("Token accounts fetched:", accounts);
 
         const accountsKeys = accounts.map(
-          (a: TokenAccount) => new PublicKey(a.pubkey)
+          (acct: TokenAccount) => new PublicKey(acct.pubkey)
         );
         setTokenAccounts(accounts);
         setAccountKeys(accountsKeys);
@@ -124,17 +122,21 @@ function SimpleMode() {
     [publicKey]
   );
 
+  // On mount or when publicKey changes
   useEffect(() => {
     if (publicKey) {
       scanTokenAccounts();
     }
   }, [publicKey, scanTokenAccounts]);
 
-  // total SOL from rent
+  // Calculate total SOL from rent in these accounts
   const totalUnlockableSol = tokenAccounts
     .reduce((sum, a) => sum + (a.rentAmount || 0), 0)
     .toFixed(5);
 
+  // ─────────────────────────────────────────────────────────────────
+  // Close All Accounts in a single pop-up, chunking if needed
+  // ─────────────────────────────────────────────────────────────────
   async function closeAllAccounts() {
     if (!publicKey) {
       setError("Wallet not connected");
@@ -149,7 +151,7 @@ function SimpleMode() {
       setError(null);
       setIsLoading(true);
 
-      // check user balance
+      // Check user balance for fees
       const balResp = await fetch(
         `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
       );
@@ -169,46 +171,83 @@ function SimpleMode() {
         return;
       }
 
-      // chunk ~70 accounts at a time
+      // chunk up to 70 accounts per transaction
       const chunkedKeys = chunkArray(accountKeys, 70);
       console.log(`Chunked into ${chunkedKeys.length} sets for up to 70 each.`);
 
       const referralCode = getCookie("referral_code");
 
-      // Build typed transactions
+      // Build all close transactions from the backend
       const allCloseTxs = await buildAllCloseTxs(publicKey, chunkedKeys, referralCode);
 
-      // signAll
-      const unsignedTxs = allCloseTxs.map((r) => r.transaction);
+      // Sign all
+      const unsignedTxs = allCloseTxs.map((item) => item.transaction);
       const signedTxs = await signAllTransactions(unsignedTxs);
 
       let totalSolReceived = 0;
       let totalSolShared = 0;
 
-      // now send each transaction
+      // Send + confirm each signed transaction in a loop
       for (let i = 0; i < signedTxs.length; i++) {
         const signedTx = signedTxs[i];
         const { solReceived, solShared, chunkSize } = allCloseTxs[i];
 
-        const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-        });
+        let signature = "";
 
-        const confirmation = await connection.confirmTransaction({
-          signature,
-          blockhash: signedTx.recentBlockhash!,
-          lastValidBlockHeight: signedTx.lastValidBlockHeight!,
-        });
+        try {
+          // 1) Send
+          signature = await connection.sendRawTransaction(signedTx.serialize(), {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          });
 
-        if (confirmation.value.err) {
-          throw new Error(`Transaction ${i} failed: ${confirmation.value.err}`);
+          // 2) Confirm
+          const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash: signedTx.recentBlockhash!,
+            lastValidBlockHeight: signedTx.lastValidBlockHeight!,
+          });
+
+          if (confirmation.value.err) {
+            throw new Error(`Transaction ${i} failed: ${confirmation.value.err}`);
+          }
+        } catch (err) {
+          // ─────────────────────────────────────────────────────────────────
+          // CATCH BLOCK: Check if blockhash expired but the tx might be successful
+          // ─────────────────────────────────────────────────────────────────
+          if (
+            err instanceof Error &&
+            err.message.includes("TransactionExpiredBlockheightExceededError")
+          ) {
+            console.warn("Blockhash expired. Re-checking chain for success...");
+
+            // Re-check if the chain actually records the transaction as successful
+            const txInfo = await connection.getTransaction(signature, {
+              commitment: "confirmed",
+            });
+
+            if (txInfo && !txInfo.meta?.err) {
+              console.log(
+                `Transaction ${i} actually succeeded despite blockhash expiry.`
+              );
+              // If we got here, it's effectively a success. We continue.
+            } else {
+              // The chain has no record => truly fail
+              throw new Error(`Transaction ${i} blockhash expired and not found on chain.`);
+            }
+          } else {
+            throw err; // Rethrow any other error
+          }
         }
 
-        // store claim
-        await storeClaimTransaction(publicKey.toBase58(), signature, solReceived, chunkSize);
+        // If we reach here, we believe the transaction actually succeeded
+        await storeClaimTransaction(
+          publicKey.toBase58(),
+          signature,
+          solReceived,
+          chunkSize
+        );
 
-        // if you have solShared, update referral
         if (referralCode && solShared) {
           await updateAffiliatedWallet(publicKey.toBase58(), solShared);
           totalSolShared += solShared;
@@ -228,7 +267,7 @@ function SimpleMode() {
       setError("Error closing accounts in bulk: " + (err as Error).message);
     } finally {
       setIsLoading(false);
-      // re-scan
+      // Re-scan to refresh
       scanTokenAccounts(true);
     }
   }
@@ -237,13 +276,16 @@ function SimpleMode() {
     <section>
       <div className="accounts-info-wrapper smooth-appear">
         <p>
-          Wallet Balance: <span className="gradient-text">{walletBalance.toFixed(5)} SOL</span>
+          Wallet Balance:{" "}
+          <span className="gradient-text">{walletBalance.toFixed(5)} SOL</span>
         </p>
         <p>
-          Accounts to close: <span className="gradient-text">{tokenAccounts.length}</span>
+          Accounts to close:{" "}
+          <span className="gradient-text">{tokenAccounts.length}</span>
         </p>
         <p>
-          Total SOL to unlock: <span className="gradient-text">{totalUnlockableSol} SOL</span>
+          Total SOL to unlock:{" "}
+          <span className="gradient-text">{totalUnlockableSol} SOL</span>
         </p>
       </div>
 
