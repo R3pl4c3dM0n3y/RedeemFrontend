@@ -12,6 +12,18 @@ import { storeClaimTransaction } from "../../api/claimTransactions";
 import { getCookie } from "../../utils/cookies";
 import { updateAffiliatedWallet } from "../../api/affiliation";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 1) NEW: Helper function to chunk an array into groups of a specified size.
+//    We'll use this to break the accounts into batches of three.
+// ─────────────────────────────────────────────────────────────────────────────
+function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
+  const result = [];
+  for (let i = 0; i < arr.length; i += chunkSize) {
+    result.push(arr.slice(i, i + chunkSize));
+  }
+  return result;
+}
+
 function SimpleMode() {
   const { publicKey, signTransaction } = useWallet();
   const { connection } = useConnection();
@@ -75,6 +87,12 @@ function SimpleMode() {
     }
   }, [publicKey, scanTokenAccounts]);
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 2) MODIFIED: closeAllAccounts now splits the accounts into groups of three.
+  //    It loops through each group, requests a transaction, signs, sends,
+  //    confirms, and logs the result. This ensures we avoid transaction size
+  //    limits if the user has many accounts.
+  // ─────────────────────────────────────────────────────────────────────────────
   async function closeAllAccounts() {
     if (!publicKey) {
       setError("Wallet not connected");
@@ -96,8 +114,7 @@ function SimpleMode() {
       );
       const { balance } = await response.json();
       console.log("Wallet Balance Before Claim:", balance);
-
-      setWalletBalance(balance); // Update wallet balance state
+      setWalletBalance(balance);
 
       if (balance < 0.001) {
         setError("Insufficient SOL to cover transaction fees.");
@@ -105,60 +122,95 @@ function SimpleMode() {
         return;
       }
 
+      // Get referral code (if any)
       const code = getCookie("referral_code");
-      const { transaction, solReceived, solShared } =
-        await closeAccountBunchTransaction(publicKey, accountKeys, code);
 
-      const signedTransaction = await signTransaction(transaction);
+      // Break all the accountKeys into batches of three
+      const chunkedAccountKeys = chunkArray(accountKeys, 3);
 
-      let blockhash = transaction.recentBlockhash;
-      let lastValidBlockHeight = transaction.lastValidBlockHeight;
+      // Track cumulative SOL received and shared for the final summary
+      let totalSolReceived = 0;
+      let totalSolShared = 0;
 
-      if (!blockhash || !lastValidBlockHeight) {
-        const latestBlockhash = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = latestBlockhash.blockhash;
-        transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
-        blockhash = transaction.recentBlockhash;
-        lastValidBlockHeight = transaction.lastValidBlockHeight;
-      }
+      // Process each chunk in sequence
+      for (let i = 0; i < chunkedAccountKeys.length; i++) {
+        const chunk = chunkedAccountKeys[i];
+        console.log(
+          `Closing chunk ${i + 1} of ${chunkedAccountKeys.length}:`,
+          chunk
+        );
 
-      // Serialize the signed transaction
-      const serializedTransaction = signedTransaction.serialize();
-      const signature = await connection.sendRawTransaction(
-        serializedTransaction,
-        {
-          skipPreflight: true,
-          preflightCommitment: "confirmed",
+        // Request transaction from the backend for just this chunk of 3 (or fewer)
+        const { transaction, solReceived, solShared } =
+          await closeAccountBunchTransaction(publicKey, chunk, code);
+
+        // Sign the transaction
+        const signedTransaction = await signTransaction(transaction);
+
+        // Ensure we have a recent blockhash
+        let blockhash = transaction.recentBlockhash;
+        let lastValidBlockHeight = transaction.lastValidBlockHeight;
+
+        if (!blockhash || !lastValidBlockHeight) {
+          const latestBlockhash = await connection.getLatestBlockhash();
+          transaction.recentBlockhash = latestBlockhash.blockhash;
+          transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+          blockhash = transaction.recentBlockhash;
+          lastValidBlockHeight = transaction.lastValidBlockHeight;
         }
-      );
 
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight,
-      });
+        // Send the transaction
+        const signature = await connection.sendRawTransaction(
+          signedTransaction.serialize(),
+          {
+            // Setting skipPreflight to false is better for debugging
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          }
+        );
 
-      if (confirmation.value.err) {
-        throw new Error("Transaction failed to confirm");
+        // Confirm the transaction
+        const confirmation = await connection.confirmTransaction({
+          signature,
+          blockhash,
+          lastValidBlockHeight,
+        });
+
+        if (confirmation.value.err) {
+          throw new Error("Transaction failed to confirm");
+        }
+
+        // Store claim transaction in the DB
+        await storeClaimTransaction(
+          publicKey.toBase58(),
+          signature,
+          solReceived,
+          chunk.length
+        );
+
+        // Update the affiliated wallet if needed
+        if (code && solShared) {
+          await updateAffiliatedWallet(publicKey.toBase58(), solShared);
+        }
+
+        // Keep track of the total SOL across all chunks
+        if (solReceived) totalSolReceived += solReceived;
+        if (solShared) totalSolShared += solShared;
       }
 
-      storeClaimTransaction(
-        publicKey.toBase58(),
-        signature,
-        solReceived,
-        accountKeys.length
+      // Show a final success message after all chunks are processed
+      setStatusMessage(
+        `All accounts closed in ${chunkedAccountKeys.length} transactions.
+        Total SOL reclaimed: ${totalSolReceived.toFixed(6)}
+        (Shared: ${totalSolShared.toFixed(6)})`
       );
-
-      if (code && solShared)
-        await updateAffiliatedWallet(publicKey.toBase58(), solShared);
-
-      setStatusMessage(`Accounts closed successfully. Signature: ${signature}`);
     } catch (err) {
-      console.error("Error closing accounts:", err);
-      setError("Error closing accounts.");
+      console.error("Error closing accounts in chunks:", err);
+      setError("Error closing accounts in chunks.");
     } finally {
       setIsLoading(false);
-      scanTokenAccounts(true); // Refresh accounts and balance
+      // Refresh accounts and balance
+      scanTokenAccounts(true);
     }
   }
 
@@ -187,11 +239,7 @@ function SimpleMode() {
             onClick={closeAllAccounts}
             disabled={isLoading}
           >
-            {!isLoading ? (
-              "Claim All Sol"
-            ) : (
-              <div className="loading-circle"></div>
-            )}
+            {!isLoading ? "Claim All Sol" : <div className="loading-circle"></div>}
           </button>
         </div>
       )}
