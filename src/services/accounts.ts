@@ -6,7 +6,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
-  ComputeBudgetProgram,
+  // ComputeBudgetProgram,  <-- REMOVE import or comment out if not needed
   Connection,
   PublicKey,
   SystemProgram,
@@ -25,8 +25,7 @@ const DESTINATION_WALLET = process.env.DESTINATION_WALLET
       );
     })();
 
-// Constants
-const USER_SHARE = 0.65; //
+const USER_SHARE = 0.65;
 
 // Debugging the API_URL
 const API_URL = import.meta.env.VITE_API_URL
@@ -37,19 +36,19 @@ console.log("API_URL:", API_URL);
 
 /**
  * Base Transaction Creator
+ * (No longer adds any ComputeBudget instructions here, 
+ * to avoid duplicating the backend’s instructions.)
  */
 function createBaseTransaction(): Transaction {
-  const computedUnits = ComputeBudgetProgram.setComputeUnitLimit({
-    units: 3725,
-  });
-  const computedUnitPrice = ComputeBudgetProgram.setComputeUnitPrice({
-    microLamports: 150000,
-  });
-  return new Transaction().add(computedUnits, computedUnitPrice);
+  // Simply create a blank transaction.
+  // The backend will add setComputeUnitLimit etc.
+  return new Transaction();
 }
 
 /**
  * Close Account Transaction
+ * (If you still need these “frontend side” transaction flows,
+ * keep them, but *remove* any references to setComputeUnitLimit.)
  */
 export async function closeAccountTransaction(
   connection: Connection,
@@ -98,16 +97,19 @@ export async function closeAccountWithBalanceTransaction(
 
   if (tokenBalance === BigInt(0)) throw new Error("Account with 0 balance");
 
-  // Use `getAssociatedTokenAddress` here
   const associatedTokenAddress = await getAssociatedTokenAddress(
     mintAddress,
     userPubKey
   );
   console.log("Associated Token Address:", associatedTokenAddress.toBase58());
 
+  // Remove or comment out any extra compute instructions here
+  // transaction.add(
+  //   ComputeBudgetProgram.setComputeUnitLimit({ units: 200000 }),
+  //   ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }),
+  // );
+
   transaction.add(
-    ComputeBudgetProgram.setComputeUnitLimit({ units: 200000 }),
-    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }),
     createBurnInstruction(
       accountPubKey,
       mintAddress,
@@ -254,4 +256,5 @@ async function obtainAffiliatedWallet() {
   }
   return null;
 }
+
 dotenv.config();
