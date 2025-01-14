@@ -12,7 +12,7 @@ import { storeClaimTransaction } from "../../api/claimTransactions";
 import { getCookie } from "../../utils/cookies";
 import { updateAffiliatedWallet } from "../../api/affiliation";
 
-// 1) Helper to chunk an array of items into groups of 'chunkSize'
+// 1) Helper to chunk an array of items into groups of a specified size.
 function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
   const result = [];
   for (let i = 0; i < arr.length; i += chunkSize) {
@@ -21,18 +21,19 @@ function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
   return result;
 }
 
-// 2) Build an array of *unsigned* transactions for each chunk,
-//    so we can sign them all at once with signAllTransactions.
+// 2) Build an array of *unsigned* transactions — one for each chunk of 3.
 async function buildAllCloseTxs(
   userPublicKey: PublicKey,
   accountChunks: PublicKey[][],
   referralCode: string | null
-): Promise<Array<{
-  transaction: Transaction;
-  chunkSize: number;
-  solReceived: number;
-  solShared?: number;
-}>> {
+): Promise<
+  Array<{
+    transaction: Transaction;
+    chunkSize: number;
+    solReceived: number;
+    solShared?: number;
+  }>
+> {
   const results: Array<{
     transaction: Transaction;
     chunkSize: number;
@@ -40,8 +41,8 @@ async function buildAllCloseTxs(
     solShared?: number;
   }> = [];
 
-  // For each chunk of up to 3 accounts, request a transaction from the backend
   for (const chunk of accountChunks) {
+    // For each chunk, ask backend for a "close-account-bunch" transaction
     const { transaction, solReceived, solShared } =
       await closeAccountBunchTransaction(userPublicKey, chunk, referralCode);
 
@@ -56,8 +57,7 @@ async function buildAllCloseTxs(
 }
 
 function SimpleMode() {
-  // 3) We destructure 'signAllTransactions' here
-  //    If your wallet supports it (Phantom, Solflare, etc.), it'll be available.
+  // We destructure 'signAllTransactions' for bulk signing
   const { publicKey, signAllTransactions } = useWallet();
   const { connection } = useConnection();
 
@@ -70,7 +70,7 @@ function SimpleMode() {
   const [walletBalance, setWalletBalance] = useState<number>(0);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Fetch accounts with zero balance, plus the current SOL balance
+  // Fetch token accounts with zero balance + current wallet SOL balance
   // ─────────────────────────────────────────────────────────────────────────────
   const scanTokenAccounts = useCallback(
     async (forceReload: boolean = false) => {
@@ -88,19 +88,18 @@ function SimpleMode() {
         );
         console.log("Token accounts fetched:", accounts);
 
-        const accountPubkeys = accounts.map(
+        const accountsKeys = accounts.map(
           (account: TokenAccount) => new PublicKey(account.pubkey)
         );
         setTokenAccounts(accounts);
-        setAccountKeys(accountPubkeys);
+        setAccountKeys(accountsKeys);
 
-        // Fetch wallet balance from the backend
-        const response = await fetch(
+        // Fetch wallet balance from backend
+        const resp = await fetch(
           `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
         );
-        const data = await response.json();
+        const data = await resp.json();
         console.log("Fetched Wallet Balance:", data.balance);
-
         setWalletBalance(data.balance);
       } catch (err) {
         console.error("Error fetching token accounts:", err);
@@ -116,13 +115,13 @@ function SimpleMode() {
     }
   }, [publicKey, scanTokenAccounts]);
 
-  // Dynamically sum the total "rent" that can be reclaimed
+  // Calculate how much SOL can be reclaimed from rent
   const totalUnlockableSol = tokenAccounts
     .reduce((sum, account) => sum + (account.rentAmount || 0), 0)
     .toFixed(5);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Close all accounts with one wallet pop-up, even though they're chunked
+  // Close all accounts in bulk with one wallet pop-up
   // ─────────────────────────────────────────────────────────────────────────────
   async function closeAllAccounts() {
     if (!publicKey) {
@@ -130,10 +129,10 @@ function SimpleMode() {
       return;
     }
 
-    // signAllTransactions is needed for a single pop-up
+    // If the wallet doesn't support signAllTransactions, we can't do a single pop-up
     if (!signAllTransactions) {
       setError(
-        "Your wallet does not support 'signAllTransactions'. Please switch or update your wallet."
+        "Your wallet does not support bulk signing (signAllTransactions). Please upgrade or switch wallets."
       );
       return;
     }
@@ -142,11 +141,11 @@ function SimpleMode() {
       setError(null);
       setIsLoading(true);
 
-      // 1) Check the user's balance to ensure there's enough SOL for fees
-      const resp = await fetch(
+      // 1) Double-check wallet balance to ensure we can pay transaction fees
+      const balResp = await fetch(
         `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
       );
-      const { balance } = await resp.json();
+      const { balance } = await balResp.json();
       console.log("Wallet Balance Before Claim:", balance);
       setWalletBalance(balance);
 
@@ -156,57 +155,49 @@ function SimpleMode() {
         return;
       }
 
-      // 2) Chunk the accounts to avoid transaction-size limits
-      const chunkedAccountKeys = chunkArray(accountKeys, 3);
-      if (chunkedAccountKeys.length === 0) {
+      // 2) Break the account keys into groups of 3 instructions each
+      const chunkedKeys = chunkArray(accountKeys, 3);
+      if (chunkedKeys.length === 0) {
         setError("No token accounts found to close.");
         setIsLoading(false);
         return;
       }
 
-      // 3) Build all transactions for each chunk (but don't sign them yet)
+      // 3) Build all transactions for each chunk
       const referralCode = getCookie("referral_code");
-      const allCloseTxs = await buildAllCloseTxs(
-        publicKey,
-        chunkedAccountKeys,
-        referralCode
-      );
+      const allCloseTxs = await buildAllCloseTxs(publicKey, chunkedKeys, referralCode);
 
-      // 4) Extract just the Transaction objects
+      // 4) Right before signing, refresh each transaction's blockhash so it isn't stale
+      const latestBlockhash = await connection.getLatestBlockhash();
+      for (const item of allCloseTxs) {
+        item.transaction.recentBlockhash = latestBlockhash.blockhash;
+        item.transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+      }
+
+      // 5) signAllTransactions(...) with the updated blockhash
       const unsignedTxs = allCloseTxs.map((item) => item.transaction);
-
       console.log(`Built ${unsignedTxs.length} transactions. Signing them all...`);
-
-      // 5) Sign all transactions at once (one user approval)
       const signedTxs = await signAllTransactions(unsignedTxs);
       console.log("Signed all transactions:", signedTxs);
 
-      // We'll track total SOL across all chunks
+      // Tally up final results
       let totalSolReceived = 0;
       let totalSolShared = 0;
 
-      // 6) Now send + confirm each signed transaction in sequence
+      // 6) Immediately send + confirm each signed transaction
       for (let i = 0; i < signedTxs.length; i++) {
         const signedTx = signedTxs[i];
         const { solReceived, solShared, chunkSize } = allCloseTxs[i];
 
-        // Ensure blockhash is set
-        if (!signedTx.recentBlockhash) {
-          const latestBlockhash = await connection.getLatestBlockhash();
-          signedTx.recentBlockhash = latestBlockhash.blockhash;
-          signedTx.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
-        }
+        // (Optional) If user waited too long, blockhash might be invalid. 
+        // Usually it's still fresh, so we skip re-signing. Just proceed to send.
 
-        // Send the transaction
-        const signature = await connection.sendRawTransaction(
-          signedTx.serialize(),
-          {
-            skipPreflight: false,
-            preflightCommitment: "confirmed",
-          }
-        );
+        const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
 
-        // Confirm
+        // Confirm each transaction
         const confirmation = await connection.confirmTransaction({
           signature,
           blockhash: signedTx.recentBlockhash!,
@@ -217,7 +208,7 @@ function SimpleMode() {
           throw new Error(`Transaction ${i} failed to confirm`);
         }
 
-        // 7) Store claim data for this chunk
+        // 7) Store claim for this chunk
         await storeClaimTransaction(
           publicKey.toBase58(),
           signature,
@@ -225,19 +216,18 @@ function SimpleMode() {
           chunkSize
         );
 
-        // If there's a referral, update it
+        // Update referral, if applicable
         if (referralCode && solShared) {
           await updateAffiliatedWallet(publicKey.toBase58(), solShared);
         }
 
-        // Keep track of totals
         totalSolReceived += solReceived;
-        if (solShared) totalSolShared += solShared;
+        totalSolShared += solShared || 0;
       }
 
       // 8) Done. Show final success message
       setStatusMessage(
-        `All ${signedTxs.length} transactions confirmed with ONE pop-up! 
+        `All ${signedTxs.length} transactions confirmed with one pop-up.
          Total SOL reclaimed: ${totalSolReceived.toFixed(6)}
          (Shared: ${totalSolShared.toFixed(6)})`
       );
@@ -246,7 +236,7 @@ function SimpleMode() {
       setError("Error closing accounts in bulk: " + (err as Error).message);
     } finally {
       setIsLoading(false);
-      // Re-scan to update UI
+      // Re-scan to refresh the UI after closing
       scanTokenAccounts(true);
     }
   }
@@ -263,7 +253,7 @@ function SimpleMode() {
           <span className="gradient-text">{tokenAccounts.length}</span>
         </p>
         <p>
-          Total sol to unlock:{" "}
+          Total SOL to unlock:{" "}
           <span className="gradient-text">{totalUnlockableSol} SOL</span>
         </p>
       </div>
@@ -276,7 +266,7 @@ function SimpleMode() {
             onClick={closeAllAccounts}
             disabled={isLoading}
           >
-            {!isLoading ? "Claim All Sol" : <div className="loading-circle"></div>}
+            {!isLoading ? "Claim All SOL" : <div className="loading-circle"></div>}
           </button>
         </div>
       )}
