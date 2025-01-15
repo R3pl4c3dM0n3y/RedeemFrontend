@@ -1,3 +1,4 @@
+// File: src/components/accounts/Account.tsx
 import { useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
@@ -50,70 +51,72 @@ function Account(props: AccountProps) {
       if (!signTransaction) {
         throw new Error("Wallet does not support signTransaction");
       }
-      const signedTransaction = await signTransaction(transaction);
+      const signedTx = await signTransaction(transaction);
 
-      // 3) send
-      const serializedTx = signedTransaction.serialize();
+      // 3) sendRawTransaction
+      const serializedTx = signedTx.serialize();
       const signature = await connection.sendRawTransaction(serializedTx, {
         skipPreflight: false,
         preflightCommitment: "processed",
       });
 
-      // 4) confirm - handle fallback
+      // 4) confirm
       let blockhash = transaction.recentBlockhash;
       let lastValidBlockHeight = transaction.lastValidBlockHeight;
       if (!blockhash || !lastValidBlockHeight) {
+        // fallback: get a fresh blockhash
         const latestBlockhash = await connection.getLatestBlockhash();
         blockhash = latestBlockhash.blockhash;
         lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
       }
 
       try {
-        const confirmation = await connection.confirmTransaction({
+        const confirmResp = await connection.confirmTransaction({
           signature,
           blockhash,
           lastValidBlockHeight,
         });
-        if (confirmation.value.err) {
+        if (confirmResp.value.err) {
           throw new Error("Transaction failed to confirm");
         }
-      } catch (err) {
-        // Fallback check for blockhash expiry
+      } catch (confirmErr) {
         if (
-          err instanceof Error &&
-          err.message.includes("TransactionExpiredBlockheightExceededError")
+          confirmErr instanceof Error &&
+          confirmErr.message.includes("TransactionExpiredBlockheightExceededError")
         ) {
           console.warn("Blockhash expired. Checking chain for success...");
+          // re-check the chain
           const txInfo = await connection.getTransaction(signature, {
             commitment: "confirmed",
           });
           if (txInfo && !txInfo.meta?.err) {
+            // success
             console.log("Transaction actually succeeded on chain despite expiry.");
-            // We accept this as success
           } else {
-            throw new Error("Blockhash expired, not found on chain => fail");
+            throw new Error("Blockhash expired => not found on chain => fail");
           }
         } else {
-          throw err; // rethrow
+          throw confirmErr;
         }
       }
 
-      // 5) If we get here => success
+      // If we get here => success
       await storeClaimTransaction(publicKey.toBase58(), signature, solReceived);
       if (code && solShared) {
-        await updateAffiliatedWallet(publicKey.toBase58(), solShared);
+        await updateAffiliatedWallet(code, solShared);
       }
-
       setStatusMessage(`Account closed successfully. Signature: ${signature}`);
     } catch (err) {
       console.error("Detailed error:", err);
       setStatusMessage("");
-      setError("Error closing account: " + (err instanceof Error ? err.message : String(err)));
+      setError(
+        "Error closing account: " + (err instanceof Error ? err.message : String(err))
+      );
     } finally {
       setIsLoading(false);
-      // Refresh accounts
+      // Refresh the account list
       props.scanTokenAccounts();
-      // Clear messages after a delay
+      // Clear messages after delay
       setTimeout(() => {
         setStatusMessage("");
         setError("");

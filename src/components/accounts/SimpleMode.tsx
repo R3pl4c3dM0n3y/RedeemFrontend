@@ -1,3 +1,4 @@
+// File: src/components/accounts/SimpleMode.tsx
 import { useCallback, useState, useEffect } from "react";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import "./AccountsScanner.css";
@@ -12,7 +13,7 @@ import { storeClaimTransaction } from "../../api/claimTransactions";
 import { getCookie } from "../../utils/cookies";
 import { updateAffiliatedWallet } from "../../api/affiliation";
 
-/** For the backend response of closeAccountBunchTransaction */
+/** For typed response from closeAccountBunchTransaction */
 interface CloseBunchResponse {
   transaction: Transaction;
   solReceived: number;
@@ -20,7 +21,7 @@ interface CloseBunchResponse {
   processedAccounts?: string[];
 }
 
-/** Helper to chunk an array of items up to chunkSize each. */
+/** Helper: chunk an array into sub-arrays (up to `chunkSize`) */
 function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
   const result: T[][] = [];
   for (let i = 0; i < arr.length; i += chunkSize) {
@@ -41,38 +42,45 @@ function SimpleMode() {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  /** 
-   * Load zero-balance token accounts + current wallet SOL balance.
+  /**
+   * Fetch zero-balance token accounts + current SOL balance
    */
-  const scanTokenAccounts = useCallback(async (forceReload = false) => {
-    if (!publicKey) {
-      setError("Wallet not connected");
-      return;
-    }
-    try {
-      setError(null);
-      console.log("Fetching token accounts...");
-      // 1) Get zero-balance accounts
-      const accounts = await getAccountsWithoutBalanceFromAddress(publicKey, forceReload);
-      console.log("Token accounts fetched:", accounts);
+  const scanTokenAccounts = useCallback(
+    async (forceReload: boolean = false) => {
+      if (!publicKey) {
+        setError("Wallet not connected");
+        return;
+      }
+      try {
+        setError(null);
+        console.log("Fetching token accounts...");
 
-      // 2) Convert to PublicKey
-      const acctPks = accounts.map((acct: TokenAccount) => new PublicKey(acct.pubkey));
-      setTokenAccounts(accounts);
-      setAccountKeys(acctPks);
+        const accounts = await getAccountsWithoutBalanceFromAddress(
+          publicKey,
+          forceReload
+        );
+        console.log("Token accounts fetched:", accounts);
 
-      // 3) Fetch wallet SOL
-      const balResp = await fetch(
-        `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
-      );
-      const data = await balResp.json();
-      console.log("Fetched Wallet Balance:", data.balance);
-      setWalletBalance(data.balance);
-    } catch (err) {
-      console.error("Error fetching token accounts:", err);
-      setError("Failed to fetch token accounts.");
-    }
-  }, [publicKey]);
+        const accountPks = accounts.map((acct: TokenAccount) =>
+          new PublicKey(acct.pubkey)
+        );
+        setTokenAccounts(accounts);
+        setAccountKeys(accountPks);
+
+        // fetch wallet SOL balance
+        const resp = await fetch(
+          `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
+        );
+        const data = await resp.json();
+        console.log("Fetched Wallet Balance:", data.balance);
+        setWalletBalance(data.balance);
+      } catch (err) {
+        console.error("Error fetching token accounts:", err);
+        setError("Failed to fetch token accounts.");
+      }
+    },
+    [publicKey]
+  );
 
   useEffect(() => {
     if (publicKey) {
@@ -80,13 +88,16 @@ function SimpleMode() {
     }
   }, [publicKey, scanTokenAccounts]);
 
-  // Sum up the rent amounts for user display
+  /**
+   * Sum up all rent lamports from zero-balance token accounts
+   */
   const totalUnlockableSol = tokenAccounts
     .reduce((sum, acct) => sum + (acct.rentAmount || 0), 0)
     .toFixed(5);
 
   /**
-   * Close All Zero-Balance Accounts in multiple chunked transactions
+   * Close All: chunk up to 70 accounts, get transactions from backend,
+   * signAllTransactions, fallback check if blockhash expired, etc.
    */
   async function closeAllAccounts() {
     if (!publicKey) {
@@ -102,14 +113,13 @@ function SimpleMode() {
       setError(null);
       setIsLoading(true);
 
-      // 1) Double-check user balance
+      // 1) Double-check user’s SOL balance for fees
       const balResp = await fetch(
         `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
       );
       const { balance } = await balResp.json();
       console.log("Wallet Balance Before Claim:", balance);
       setWalletBalance(balance);
-
       if (balance < 0.001) {
         setError("Insufficient SOL to cover transaction fees.");
         setIsLoading(false);
@@ -125,7 +135,7 @@ function SimpleMode() {
       const chunkedKeys = chunkArray(accountKeys, 70);
       console.log(`Chunked into ${chunkedKeys.length} sets (up to 70 each).`);
 
-      // 3) Build all “bunch” transactions
+      // 3) Build all transactions from backend
       const referralCode = getCookie("referral_code");
       const allCloseTxs: {
         transaction: Transaction;
@@ -135,82 +145,94 @@ function SimpleMode() {
       }[] = [];
 
       for (const chunk of chunkedKeys) {
-        const response = (await closeAccountBunchTransaction(
+        const resp = (await closeAccountBunchTransaction(
           publicKey,
           chunk,
           referralCode
         )) as CloseBunchResponse;
 
         allCloseTxs.push({
-          transaction: response.transaction,
-          solReceived: response.solReceived,
-          solShared: response.solShared,
+          transaction: resp.transaction,
+          solReceived: resp.solReceived,
+          solShared: resp.solShared,
           chunkSize: chunk.length,
         });
       }
 
-      // 4) signAllTransactions => user sees one pop-up
-      const unsignedTxs = allCloseTxs.map((txInfo) => txInfo.transaction);
+      // 4) signAll
+      const unsignedTxs = allCloseTxs.map((c) => c.transaction);
       console.log(`Signing ${unsignedTxs.length} transactions at once...`);
       const signedTxs = await signAllTransactions(unsignedTxs);
 
       let totalSolReceived = 0;
       let totalSolShared = 0;
 
-      // 5) send + confirm each transaction
+      // 5) send + confirm each
       for (let i = 0; i < signedTxs.length; i++) {
         const signedTx = signedTxs[i];
         const { solReceived, solShared, chunkSize } = allCloseTxs[i];
 
-        // A) send
-        const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-        });
+        // A) Send
+        const signature = await connection.sendRawTransaction(
+          signedTx.serialize(),
+          {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          }
+        );
 
-        // B) confirm with fallback
         try {
-          const confirmation = await connection.confirmTransaction({
-            signature,
-            blockhash: signedTx.recentBlockhash!,
-            lastValidBlockHeight: signedTx.lastValidBlockHeight!,
-          });
-          if (confirmation.value.err) {
-            throw new Error(`Transaction ${i} failed: ${confirmation.value.err}`);
-          }
-        } catch (err) {
-          if (
-            err instanceof Error &&
-            err.message.includes("TransactionExpiredBlockheightExceededError")
-          ) {
-            console.warn(`Tx ${i} => blockhash expired. Checking chain for success...`);
-            const txInfo = await connection.getTransaction(signature, {
-              commitment: "confirmed",
+          // B) Confirm
+          const blockhash = signedTx.recentBlockhash!;
+          const lastValidBlockHeight = signedTx.lastValidBlockHeight!;
+          try {
+            const confirmation = await connection.confirmTransaction({
+              signature,
+              blockhash,
+              lastValidBlockHeight,
             });
-            if (txInfo && !txInfo.meta?.err) {
-              console.log(`Tx ${i} => success on chain despite blockhash expiry.`);
-            } else {
-              throw new Error(`Tx ${i} => blockhash expired, not found => fail.`);
+            if (confirmation.value.err) {
+              throw new Error(`Transaction ${i} failed: ${confirmation.value.err}`);
             }
-          } else {
-            throw err;
+          } catch (confirmErr) {
+            // Fallback check: blockhash expired
+            if (
+              confirmErr instanceof Error &&
+              confirmErr.message.includes("TransactionExpiredBlockheightExceededError")
+            ) {
+              console.warn(`Tx ${i} => blockhash expired. Checking chain for success...`);
+              const txInfo = await connection.getTransaction(signature, {
+                commitment: "confirmed",
+              });
+              if (txInfo && !txInfo.meta?.err) {
+                // Actually succeeded on chain
+                console.log(`Tx ${i} => found success on chain despite expiry.`);
+              } else {
+                // Not found => truly fail
+                throw new Error(`Tx ${i} => blockhash expired, not found => fail.`);
+              }
+            } else {
+              throw confirmErr;
+            }
           }
+          // If we get here => we have success
+          await storeClaimTransaction(publicKey.toBase58(), signature, solReceived, chunkSize);
+          if (referralCode && solShared) {
+            await updateAffiliatedWallet(publicKey.toBase58(), solShared);
+            totalSolShared += solShared;
+          }
+          totalSolReceived += solReceived;
+        } catch (err) {
+          console.error(`Transaction ${i} had an error:`, err);
+          // Optionally re-run this chunk with a new blockhash or show “Try again”
+          throw err;
         }
-
-        // If we get here => success
-        await storeClaimTransaction(publicKey.toBase58(), signature, solReceived, chunkSize);
-
-        if (referralCode && solShared) {
-          await updateAffiliatedWallet(publicKey.toBase58(), solShared);
-          totalSolShared += solShared;
-        }
-        totalSolReceived += solReceived;
       }
 
       // 6) final success
       setStatusMessage(
         `All transactions confirmed in one pop-up!
-         Closed ${accountKeys.length} accounts
+         Closed ${accountKeys.length} accounts 
          SOL reclaimed: ${totalSolReceived.toFixed(6)}
          (Shared: ${totalSolShared.toFixed(6)})`
       );
@@ -219,7 +241,6 @@ function SimpleMode() {
       setError("Error closing accounts in bulk: " + (err as Error).message);
     } finally {
       setIsLoading(false);
-      // Re-scan
       scanTokenAccounts(true);
     }
   }
@@ -240,11 +261,7 @@ function SimpleMode() {
 
       {tokenAccounts.length > 0 && (
         <div className="claim-all-wrapper">
-          <button
-            className="cta-button"
-            onClick={closeAllAccounts}
-            disabled={isLoading}
-          >
+          <button className="cta-button" onClick={closeAllAccounts} disabled={isLoading}>
             {!isLoading ? "Claim All SOL" : <div className="loading-circle"></div>}
           </button>
         </div>
