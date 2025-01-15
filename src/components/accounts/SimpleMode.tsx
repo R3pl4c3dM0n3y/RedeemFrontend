@@ -1,4 +1,3 @@
-// SimpleMode.tsx
 import { useCallback, useState, useEffect } from "react";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import "./AccountsScanner.css";
@@ -13,7 +12,7 @@ import { storeClaimTransaction } from "../../api/claimTransactions";
 import { getCookie } from "../../utils/cookies";
 import { updateAffiliatedWallet } from "../../api/affiliation";
 
-/** For typed response from the backend */
+/** For the backend response of closeAccountBunchTransaction */
 interface CloseBunchResponse {
   transaction: Transaction;
   solReceived: number;
@@ -21,7 +20,7 @@ interface CloseBunchResponse {
   processedAccounts?: string[];
 }
 
-/** Helper to chunk arrays up to 70 each. */
+/** Helper to chunk an array of items up to chunkSize each. */
 function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
   const result: T[][] = [];
   for (let i = 0; i < arr.length; i += chunkSize) {
@@ -42,41 +41,38 @@ function SimpleMode() {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  /** Load zero-balance token accounts + user SOL balance. */
-  const scanTokenAccounts = useCallback(
-    async (forceReload: boolean = false) => {
-      if (!publicKey) {
-        setError("Wallet not connected");
-        return;
-      }
-      try {
-        setError(null);
-        console.log("Fetching token accounts...");
-        const accounts = await getAccountsWithoutBalanceFromAddress(
-          publicKey,
-          forceReload
-        );
-        console.log("Token accounts fetched:", accounts);
+  /** 
+   * Load zero-balance token accounts + current wallet SOL balance.
+   */
+  const scanTokenAccounts = useCallback(async (forceReload = false) => {
+    if (!publicKey) {
+      setError("Wallet not connected");
+      return;
+    }
+    try {
+      setError(null);
+      console.log("Fetching token accounts...");
+      // 1) Get zero-balance accounts
+      const accounts = await getAccountsWithoutBalanceFromAddress(publicKey, forceReload);
+      console.log("Token accounts fetched:", accounts);
 
-        // Convert to PublicKey
-        const pkArray = accounts.map((a) => new PublicKey(a.pubkey));
-        setTokenAccounts(accounts);
-        setAccountKeys(pkArray);
+      // 2) Convert to PublicKey
+      const acctPks = accounts.map((acct: TokenAccount) => new PublicKey(acct.pubkey));
+      setTokenAccounts(accounts);
+      setAccountKeys(acctPks);
 
-        // fetch wallet SOL
-        const resp = await fetch(
-          `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
-        );
-        const data = await resp.json();
-        console.log("Fetched Wallet Balance:", data.balance);
-        setWalletBalance(data.balance);
-      } catch (err) {
-        console.error("Error fetching token accounts:", err);
-        setError("Failed to fetch token accounts.");
-      }
-    },
-    [publicKey]
-  );
+      // 3) Fetch wallet SOL
+      const balResp = await fetch(
+        `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
+      );
+      const data = await balResp.json();
+      console.log("Fetched Wallet Balance:", data.balance);
+      setWalletBalance(data.balance);
+    } catch (err) {
+      console.error("Error fetching token accounts:", err);
+      setError("Failed to fetch token accounts.");
+    }
+  }, [publicKey]);
 
   useEffect(() => {
     if (publicKey) {
@@ -84,14 +80,13 @@ function SimpleMode() {
     }
   }, [publicKey, scanTokenAccounts]);
 
-  // Summation of rent
+  // Sum up the rent amounts for user display
   const totalUnlockableSol = tokenAccounts
-    .reduce((sum, a) => sum + (a.rentAmount || 0), 0)
+    .reduce((sum, acct) => sum + (acct.rentAmount || 0), 0)
     .toFixed(5);
 
-  /** 
-   * Closes all zero-balance accounts in chunked transactions 
-   * up to 70 each, signAllTransactions in one pop-up.
+  /**
+   * Close All Zero-Balance Accounts in multiple chunked transactions
    */
   async function closeAllAccounts() {
     if (!publicKey) {
@@ -99,7 +94,7 @@ function SimpleMode() {
       return;
     }
     if (!signAllTransactions) {
-      setError("Wallet does not support signAllTransactions");
+      setError("Your wallet does not support signAllTransactions.");
       return;
     }
 
@@ -107,7 +102,7 @@ function SimpleMode() {
       setError(null);
       setIsLoading(true);
 
-      // check user balance
+      // 1) Double-check user balance
       const balResp = await fetch(
         `${import.meta.env.VITE_API_URL}api/accounts/get-wallet-balance?wallet_address=${publicKey.toBase58()}`
       );
@@ -120,21 +115,19 @@ function SimpleMode() {
         setIsLoading(false);
         return;
       }
-
       if (accountKeys.length === 0) {
         setError("No token accounts found to close.");
         setIsLoading(false);
         return;
       }
 
-      // Chunk up to 70 each
+      // 2) chunk the accounts up to 70 each
       const chunkedKeys = chunkArray(accountKeys, 70);
       console.log(`Chunked into ${chunkedKeys.length} sets (up to 70 each).`);
 
+      // 3) Build all “bunch” transactions
       const referralCode = getCookie("referral_code");
-
-      // Build each chunk from the backend
-      const allTxs: {
+      const allCloseTxs: {
         transaction: Transaction;
         solReceived: number;
         solShared?: number;
@@ -147,7 +140,8 @@ function SimpleMode() {
           chunk,
           referralCode
         )) as CloseBunchResponse;
-        allTxs.push({
+
+        allCloseTxs.push({
           transaction: response.transaction,
           solReceived: response.solReceived,
           solShared: response.solShared,
@@ -155,29 +149,26 @@ function SimpleMode() {
         });
       }
 
-      // signAll
-      const unsignedTxs = allTxs.map((item) => item.transaction);
+      // 4) signAllTransactions => user sees one pop-up
+      const unsignedTxs = allCloseTxs.map((txInfo) => txInfo.transaction);
       console.log(`Signing ${unsignedTxs.length} transactions at once...`);
       const signedTxs = await signAllTransactions(unsignedTxs);
 
       let totalSolReceived = 0;
       let totalSolShared = 0;
 
-      // send + confirm each
+      // 5) send + confirm each transaction
       for (let i = 0; i < signedTxs.length; i++) {
         const signedTx = signedTxs[i];
-        const { solReceived, solShared, chunkSize } = allTxs[i];
+        const { solReceived, solShared, chunkSize } = allCloseTxs[i];
 
-        // A) Send
-        const signature = await connection.sendRawTransaction(
-          signedTx.serialize(),
-          {
-            skipPreflight: false,
-            preflightCommitment: "confirmed",
-          }
-        );
+        // A) send
+        const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
 
-        // B) Confirm + fallback
+        // B) confirm with fallback
         try {
           const confirmation = await connection.confirmTransaction({
             signature,
@@ -192,28 +183,23 @@ function SimpleMode() {
             err instanceof Error &&
             err.message.includes("TransactionExpiredBlockheightExceededError")
           ) {
-            console.warn(`Tx ${i} blockhash expired, checking chain...`);
+            console.warn(`Tx ${i} => blockhash expired. Checking chain for success...`);
             const txInfo = await connection.getTransaction(signature, {
               commitment: "confirmed",
             });
             if (txInfo && !txInfo.meta?.err) {
-              // success
-              console.log(`Tx ${i} actually succeeded on chain despite expiry.`);
+              console.log(`Tx ${i} => success on chain despite blockhash expiry.`);
             } else {
-              throw new Error(`Tx ${i} => blockhash expired, not found on chain => fail.`);
+              throw new Error(`Tx ${i} => blockhash expired, not found => fail.`);
             }
           } else {
             throw err;
           }
         }
 
-        // If success
-        await storeClaimTransaction(
-          publicKey.toBase58(),
-          signature,
-          solReceived,
-          chunkSize
-        );
+        // If we get here => success
+        await storeClaimTransaction(publicKey.toBase58(), signature, solReceived, chunkSize);
+
         if (referralCode && solShared) {
           await updateAffiliatedWallet(publicKey.toBase58(), solShared);
           totalSolShared += solShared;
@@ -221,7 +207,7 @@ function SimpleMode() {
         totalSolReceived += solReceived;
       }
 
-      // final success
+      // 6) final success
       setStatusMessage(
         `All transactions confirmed in one pop-up!
          Closed ${accountKeys.length} accounts
@@ -233,7 +219,7 @@ function SimpleMode() {
       setError("Error closing accounts in bulk: " + (err as Error).message);
     } finally {
       setIsLoading(false);
-      // re-scan
+      // Re-scan
       scanTokenAccounts(true);
     }
   }
@@ -242,22 +228,23 @@ function SimpleMode() {
     <section>
       <div className="accounts-info-wrapper smooth-appear">
         <p>
-          Wallet Balance:{" "}
-          <span className="gradient-text">{walletBalance.toFixed(5)} SOL</span>
+          Wallet Balance: <span className="gradient-text">{walletBalance.toFixed(5)} SOL</span>
         </p>
         <p>
-          Accounts to close:{" "}
-          <span className="gradient-text">{tokenAccounts.length}</span>
+          Accounts to close: <span className="gradient-text">{tokenAccounts.length}</span>
         </p>
         <p>
-          Total SOL to unlock:{" "}
-          <span className="gradient-text">{totalUnlockableSol} SOL</span>
+          Total SOL to unlock: <span className="gradient-text">{totalUnlockableSol} SOL</span>
         </p>
       </div>
 
       {tokenAccounts.length > 0 && (
         <div className="claim-all-wrapper">
-          <button className="cta-button" onClick={closeAllAccounts} disabled={isLoading}>
+          <button
+            className="cta-button"
+            onClick={closeAllAccounts}
+            disabled={isLoading}
+          >
             {!isLoading ? "Claim All SOL" : <div className="loading-circle"></div>}
           </button>
         </div>

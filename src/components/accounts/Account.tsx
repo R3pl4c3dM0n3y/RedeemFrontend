@@ -1,4 +1,3 @@
-// Account.tsx
 import { useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
@@ -26,15 +25,12 @@ function Account(props: AccountProps) {
 
   const account = props.account;
 
-  async function closeAccount(accountPubkey: string) {
+  const closeAccount = async (accountPubkey: string) => {
     if (!publicKey) {
       setError("Wallet not connected");
       return;
     }
-    if (!signTransaction) {
-      setError("Wallet does not support signTransaction");
-      return;
-    }
+
     try {
       setIsLoading(true);
       setError(null);
@@ -43,27 +39,30 @@ function Account(props: AccountProps) {
       const code = getCookie("referral_code");
       const accountToClose = new PublicKey(accountPubkey);
 
-      // 1) ask backend
+      // 1) Ask backend for transaction
       const { transaction, solReceived, solShared } = await closeAccountTransaction(
         publicKey,
         accountToClose,
         code
       );
 
-      // 2) sign
-      const signedTx = await signTransaction(transaction);
+      // 2) signTransaction
+      if (!signTransaction) {
+        throw new Error("Wallet does not support signTransaction");
+      }
+      const signedTransaction = await signTransaction(transaction);
 
       // 3) send
-      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+      const serializedTx = signedTransaction.serialize();
+      const signature = await connection.sendRawTransaction(serializedTx, {
         skipPreflight: false,
-        preflightCommitment: "confirmed",
+        preflightCommitment: "processed",
       });
 
-      // 4) confirm + fallback
+      // 4) confirm - handle fallback
       let blockhash = transaction.recentBlockhash;
       let lastValidBlockHeight = transaction.lastValidBlockHeight;
       if (!blockhash || !lastValidBlockHeight) {
-        // fetch a fresh one just in case
         const latestBlockhash = await connection.getLatestBlockhash();
         blockhash = latestBlockhash.blockhash;
         lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
@@ -79,64 +78,63 @@ function Account(props: AccountProps) {
           throw new Error("Transaction failed to confirm");
         }
       } catch (err) {
+        // Fallback check for blockhash expiry
         if (
           err instanceof Error &&
           err.message.includes("TransactionExpiredBlockheightExceededError")
         ) {
-          console.warn("blockhash expired, checking chain for success...");
+          console.warn("Blockhash expired. Checking chain for success...");
           const txInfo = await connection.getTransaction(signature, {
             commitment: "confirmed",
           });
           if (txInfo && !txInfo.meta?.err) {
-            console.log("Chain says success, ignoring blockhash expiry.");
+            console.log("Transaction actually succeeded on chain despite expiry.");
+            // We accept this as success
           } else {
-            throw new Error("Blockhash expired => not found on chain => fail.");
+            throw new Error("Blockhash expired, not found on chain => fail");
           }
         } else {
-          throw err;
+          throw err; // rethrow
         }
       }
 
-      // If success
+      // 5) If we get here => success
       await storeClaimTransaction(publicKey.toBase58(), signature, solReceived);
-
       if (code && solShared) {
-        await updateAffiliatedWallet(code, solShared);
+        await updateAffiliatedWallet(publicKey.toBase58(), solShared);
       }
 
       setStatusMessage(`Account closed successfully. Signature: ${signature}`);
     } catch (err) {
       console.error("Detailed error:", err);
       setStatusMessage("");
-      setError("Error closing account: " + (err as Error).message);
+      setError("Error closing account: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsLoading(false);
-      props.scanTokenAccounts(); // refresh the list
-
+      // Refresh accounts
+      props.scanTokenAccounts();
+      // Clear messages after a delay
       setTimeout(() => {
         setStatusMessage("");
         setError("");
       }, 3000);
     }
-  }
+  };
 
   return (
     <>
       <article className="account" key={account.pubkey}>
         <div className="account-info">
           <p>
-            <b>Account: </b>
-            <br />
+            <b>Account:</b> <br />
             {account.pubkey}
           </p>
           <p>
-            <b>Mint: </b>
-            <br />
+            <b>Mint:</b> <br />
             {account.mint}
           </p>
           <p>
-            <b>Balance: </b>
-            <br />
+            <b>Balance:</b> <br />
             {account.balance} SOL
           </p>
         </div>
