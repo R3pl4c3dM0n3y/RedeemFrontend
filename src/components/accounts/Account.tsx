@@ -1,3 +1,4 @@
+// Account.tsx
 import { useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
@@ -25,12 +26,15 @@ function Account(props: AccountProps) {
 
   const account = props.account;
 
-  const closeAccount = async (accountPubkey: string) => {
+  async function closeAccount(accountPubkey: string) {
     if (!publicKey) {
       setError("Wallet not connected");
       return;
     }
-
+    if (!signTransaction) {
+      setError("Wallet does not support signTransaction");
+      return;
+    }
     try {
       setIsLoading(true);
       setError(null);
@@ -39,30 +43,27 @@ function Account(props: AccountProps) {
       const code = getCookie("referral_code");
       const accountToClose = new PublicKey(accountPubkey);
 
-      // 1) Ask the backend for a transaction
+      // 1) ask backend
       const { transaction, solReceived, solShared } = await closeAccountTransaction(
         publicKey,
         accountToClose,
         code
       );
 
-      // 2) signTransaction
-      if (!signTransaction) {
-        throw new Error("Wallet does not support signTransaction");
-      }
-      const signedTransaction = await signTransaction(transaction);
+      // 2) sign
+      const signedTx = await signTransaction(transaction);
 
-      // 3) Serialize + send
-      const serializedTx = signedTransaction.serialize();
-      const signature = await connection.sendRawTransaction(serializedTx, {
+      // 3) send
+      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
         skipPreflight: false,
-        preflightCommitment: "processed",
+        preflightCommitment: "confirmed",
       });
 
-      // 4) Confirm
+      // 4) confirm + fallback
       let blockhash = transaction.recentBlockhash;
       let lastValidBlockHeight = transaction.lastValidBlockHeight;
       if (!blockhash || !lastValidBlockHeight) {
+        // fetch a fresh one just in case
         const latestBlockhash = await connection.getLatestBlockhash();
         blockhash = latestBlockhash.blockhash;
         lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
@@ -78,31 +79,25 @@ function Account(props: AccountProps) {
           throw new Error("Transaction failed to confirm");
         }
       } catch (err) {
-        // ─────────────────────────────────────────────────────────────────
-        // FALLBACK: Possibly "TransactionExpiredBlockheightExceededError"
-        // ─────────────────────────────────────────────────────────────────
         if (
           err instanceof Error &&
           err.message.includes("TransactionExpiredBlockheightExceededError")
         ) {
-          console.warn("Blockhash expired. Checking chain for success...");
-
-          // Re-check on chain:
+          console.warn("blockhash expired, checking chain for success...");
           const txInfo = await connection.getTransaction(signature, {
             commitment: "confirmed",
           });
           if (txInfo && !txInfo.meta?.err) {
-            console.log("Transaction actually succeeded on chain despite expiry.");
-            // We do NOT throw here. We continue as success.
+            console.log("Chain says success, ignoring blockhash expiry.");
           } else {
-            throw new Error("Blockhash expired, not found on chain => fail.");
+            throw new Error("Blockhash expired => not found on chain => fail.");
           }
         } else {
-          throw err; // rethrow anything else
+          throw err;
         }
       }
 
-      // 5) If we get here, it’s considered success
+      // If success
       await storeClaimTransaction(publicKey.toBase58(), signature, solReceived);
 
       if (code && solShared) {
@@ -113,21 +108,17 @@ function Account(props: AccountProps) {
     } catch (err) {
       console.error("Detailed error:", err);
       setStatusMessage("");
-      setError(
-        "Error closing account: " + (err instanceof Error ? err.message : String(err))
-      );
+      setError("Error closing account: " + (err as Error).message);
     } finally {
       setIsLoading(false);
-      // Re-scan the token accounts
-      props.scanTokenAccounts();
+      props.scanTokenAccounts(); // refresh the list
 
-      // Clear messages after a short delay
       setTimeout(() => {
         setStatusMessage("");
         setError("");
       }, 3000);
     }
-  };
+  }
 
   return (
     <>
